@@ -1,0 +1,12 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends procps && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/src/DeepCrawl.Api
+EXPOSE 8080
+
+ENV ASPNETCORE_ENVIRONMENT=Development
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
+ENV DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER=1
+
+ENTRYPOINT ["dotnet", "watch", "run", "--project", "/src/src/DeepCrawl.Api/DeepCrawl.Api.csproj", "--urls", "http://0.0.0.0:8080", "--no-launch-profile"]

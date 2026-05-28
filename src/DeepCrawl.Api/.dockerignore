@@ -1,0 +1,11 @@
+.idea/
+.vs/
+obj/
+bin/
+test_tmp/
+root_sln/
+PLAN.md
+*.user
+*.DotSettings.user
+claakdata/
+pgdata/

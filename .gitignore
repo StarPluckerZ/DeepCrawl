@@ -1,0 +1,55 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+packages/
+*.nupkg
+
+# Rider / IDE
+.idea/
+*.sln.iml
+.vs/
+
+# Environment
+.env
+*.env
+!.env.example
+appsettings.*.local.json
+appsettings.Development.json
+
+# Docker volumes
+pgdata/
+cloakdata/
+docker/pgdata/
+
+# NuGet
+*.nuget.g.props
+*.nuget.g.targets
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Logs
+*.log
+
+# Temp
+*.tmp
+*.swp
+*~
+test_tmp/
+root_sln/
+
+# Local docs
+PLAN.md

@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+
+    <!-- Prevent Rider from auto-injecting container tool NuGet packages -->
+    <EnableSdkContainerSupport>false</EnableSdkContainerSupport>
+    <_IsPublishingContainer>false</_IsPublishingContainer>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,122 @@
+using System.Security.Cryptography;
+using DeepCrawl.Core.Services;
+using DeepCrawl.Domain.Abstractions;
+using DeepCrawl.Domain.Entities;
+using DeepCrawl.Infrastructure.AI;
+using DeepCrawl.Infrastructure.Auth;
+using DeepCrawl.Infrastructure.Cleaning;
+using DeepCrawl.Infrastructure.Clients;
+using DeepCrawl.Infrastructure.Persistence;
+using FreeSql;
+using FreeSql.DataAnnotations;
+using Microsoft.Extensions.AI;
+using Polly;
+using Polly.Extensions.Http;
+using Scalar.AspNetCore;
+using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi();
+
+builder.Services.Configure<CloakBrowserClientOptions>(builder.Configuration.GetSection("CloakBrowser"));
+builder.Services.Configure<AIMarkdownCleanerOptions>(builder.Configuration.GetSection("AI"));
+builder.Services.Configure<CrawlPipelineOptions>(builder.Configuration.GetSection("Cache"));
+builder.Services.PostConfigure<CrawlPipelineOptions>(opts =>
+    opts.AiConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["AI:ApiKey"]));
+
+var fsql = new FreeSqlBuilder()
+    .UseConnectionString(DataType.PostgreSQL, builder.Configuration.GetConnectionString("PostgreSQL"))
+    .UseAutoSyncStructure(true)
+    .Build();
+
+var entityTypes = typeof(CrawlRecord).Assembly.GetTypes()
+    .Where(t => Attribute.IsDefined(t, typeof(TableAttribute)));
+
+foreach (var type in entityTypes)
+    fsql.CodeFirst.ConfigEntity(type, _ => { });
+
+builder.Services.AddSingleton<IFreeSql>(fsql);
+
+// Generate initial API token if none exist
+var tokenCount = fsql.Select<ApiToken>().Count();
+if (tokenCount == 0)
+{
+    var tokenBytes = RandomNumberGenerator.GetBytes(32);
+    var token = "sk-" + Convert.ToHexStringLower(tokenBytes);
+    fsql.Insert(new ApiToken { Token = token, IsActive = true }).ExecuteAffrows();
+
+    Console.WriteLine();
+    Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
+    Console.WriteLine("║         DEEPCRAWL API TOKEN                              ║");
+    Console.WriteLine("║                                                          ║");
+    Console.WriteLine("║  No tokens found — a new token has been generated:        ║");
+    Console.WriteLine($"║           {token}              ║");
+    Console.WriteLine("║                                                          ║");
+    Console.WriteLine("║  Save this token. It will NOT be printed again.           ║");
+    Console.WriteLine("║  Use it in the Authorization header:                     ║");
+    Console.WriteLine("║      Authorization: Bearer {0}  ║", token);
+    Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
+    Console.WriteLine();
+}
+
+builder.Services.AddScoped<ICrawlRepository, CrawlRepository>();
+
+builder.Services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =>
+{
+    var baseUrl = builder.Configuration["CloakBrowser:BaseUrl"] ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(60);
+})
+.AddPolicyHandler(HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
+
+var endpoint = builder.Configuration["AI:BaseUrl"] ?? "https://api.siliconflow.cn/v1/chat/completions";
+var apiKey = builder.Configuration["AI:ApiKey"] ?? "";
+var model = builder.Configuration["AI:Model"] ?? "Qwen/Qwen3-8B";
+var thinkingLevel = builder.Configuration["AI:ThinkingLevel"];
+
+if (string.IsNullOrWhiteSpace(apiKey))
+    Console.WriteLine("[WARN] AI:ApiKey is empty — AI cleaning will be skipped.");
+
+builder.Services.AddSingleton(new AIMarkdownCleanerOptions
+{
+    BaseUrl = endpoint,
+    ApiKey = apiKey,
+    Model = model,
+    ThinkingLevel = thinkingLevel
+});
+
+builder.Services.AddSingleton<IChatClient>(new OpenAI.OpenAIClient(
+    new System.ClientModel.ApiKeyCredential(apiKey),
+    new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) })
+    .GetChatClient(model)
+    .AsIChatClient());
+
+builder.Services.AddSingleton<IHtmlCleaner, AngleSharpHtmlCleaner>();
+builder.Services.AddSingleton<IMarkdownConverter, ReverseMarkdownConverter>();
+builder.Services.AddSingleton<IAIMarkdownCleaner, OpenAIMarkdownCleaner>();
+
+builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.MetadataExtractorStep>();
+builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.AngleSharpHtmlCleanerStep>();
+builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.StripDataUriStep>();
+builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.ReverseMarkdownStep>();
+builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.OpenAICleanStep>();
+builder.Services.AddSingleton<CleanPipeline>();
+builder.Services.AddSingleton<ITokenValidator, TokenValidator>();
+builder.Services.AddScoped<CrawlPipeline>();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
+app.MapControllers();
+app.Run();

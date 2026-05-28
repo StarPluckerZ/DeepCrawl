@@ -1,0 +1,3 @@
+-- PostgreSQL initialization for DeepCrawl
+-- Tables are auto-created by FreeSQL CodeFirst.
+-- This file is reserved for seed data and extensions.
