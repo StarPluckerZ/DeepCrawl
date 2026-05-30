@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import logging
 import os
+from collections import OrderedDict
 from urllib.parse import urlparse
 
 from cloakbrowser import launch_async
@@ -9,12 +11,22 @@ logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT = int(os.getenv("CLOAKBROWSER_MAX_CONCURRENT", "3"))
 DEFAULT_TIMEOUT_MS = int(os.getenv("CLOAKBROWSER_TIMEOUT_MS", "30000"))
+MAX_BROWSERS = int(os.getenv("CLOAKBROWSER_MAX_BROWSERS", str(MAX_CONCURRENT)))
 
 VALID_WAIT_UNTIL = {"load", "networkidle", "domcontentloaded", "commit"}
 
-_browser = None
+_browsers: OrderedDict[str, object] = OrderedDict()
 _semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-_browser_lock = asyncio.Lock()
+_browsers_lock = asyncio.Lock()
+
+
+def _compute_seed(domain: str) -> str:
+    h = hashlib.sha256(domain.encode()).hexdigest()[:8]
+    return str(int(h, 16) % 100_000)
+
+
+def _extract_domain(url: str) -> str:
+    return urlparse(url).hostname or url
 
 
 def _is_http_url(url: str) -> bool:
@@ -25,20 +37,34 @@ def _is_http_url(url: str) -> bool:
         return False
 
 
-async def get_browser():
-    global _browser
-    async with _browser_lock:
-        if _browser is None:
-            _browser = await launch_async(humanize=True)
-            logger.info("CloakBrowser launched (max_concurrent=%d)", MAX_CONCURRENT)
-    return _browser
+async def get_browser(seed: str):
+    async with _browsers_lock:
+        if seed in _browsers:
+            _browsers.move_to_end(seed)
+            return _browsers[seed]
+
+        while len(_browsers) >= MAX_BROWSERS:
+            evict_seed, evict_browser = _browsers.popitem(last=False)
+            await evict_browser.close()
+            logger.info("Evicted browser for fingerprint seed %s (max_browsers=%d)", evict_seed, MAX_BROWSERS)
+
+        browser = await launch_async(
+            humanize=True,
+            args=[f"--fingerprint={seed}"],
+        )
+        _browsers[seed] = browser
+        logger.info("CloakBrowser launched (fingerprint=%s, active_browsers=%d)", seed, len(_browsers))
+        return browser
 
 
 async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None = None) -> str:
     if not _is_http_url(url):
         raise InvalidUrlError(f"Invalid URL: {url}")
 
-    browser = await get_browser()
+    domain = _extract_domain(url)
+    seed = _compute_seed(domain)
+    browser = await get_browser(seed)
+
     wait_strategy = _resolve_wait_until(wait_until)
     custom_wait_ms = _parse_wait_ms(wait_until)
 
@@ -121,11 +147,11 @@ def semaphore() -> asyncio.Semaphore:
 
 
 async def shutdown():
-    global _browser
-    if _browser:
-        await _browser.close()
-        _browser = None
-        logger.info("CloakBrowser closed")
+    async with _browsers_lock:
+        for seed, browser in list(_browsers.items()):
+            await browser.close()
+            logger.info("CloakBrowser closed (fingerprint=%s)", seed)
+        _browsers.clear()
 
 
 def active_count() -> int:

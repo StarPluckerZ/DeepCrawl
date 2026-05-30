@@ -13,7 +13,6 @@ from browser_manager import (
     InvalidUrlError,
     active_count,
     fetch_html,
-    get_browser,
     semaphore,
     shutdown,
 )
@@ -28,7 +27,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting cloak-service...")
-    await get_browser()
     yield
     await shutdown()
 

@@ -25,6 +25,7 @@ services:
     environment:
       CLOAKBROWSER_MAX_CONCURRENT: "3"
       CLOAKBROWSER_TIMEOUT_MS: "30000"
+      CLOAKBROWSER_MAX_BROWSERS: "3"
     volumes:
       - cloakdata:/root/.cloakbrowser
 
