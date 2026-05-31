@@ -69,7 +69,7 @@ builder.Services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =
 {
     var baseUrl = builder.Configuration["CloakBrowser:BaseUrl"] ?? "http://localhost:8000";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(60);
+    client.Timeout = TimeSpan.FromSeconds(120);
 })
 .AddPolicyHandler(HttpPolicyExtensions
     .HandleTransientHttpError()
