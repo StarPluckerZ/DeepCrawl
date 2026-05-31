@@ -21,7 +21,6 @@ public class CloakBrowserClient : ICloakBrowserClient
     {
         _http = http;
         _http.BaseAddress = new Uri(options.Value.BaseUrl);
-        _http.Timeout = TimeSpan.FromSeconds(options.Value.TimeoutSeconds);
         _logger = logger;
     }
 
