@@ -16,6 +16,18 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   cloak-service:
     build:
       context: ./cloak-service
@@ -41,11 +53,15 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__PostgreSQL: Host=postgres;Database=deepcrawl;Username=deepcrawl;Password=${POSTGRES_PASSWORD}
       CloakBrowser__BaseUrl: http://cloak-service:8000
+      Redis__Host: redis
+      Redis__Port: 6379
       AI__BaseUrl: ${AI_BASEURL}
       AI__ApiKey: ${AI_APIKEY}
       AI__Model: ${AI_MODEL}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       cloak-service:
         condition: service_started
@@ -53,3 +69,4 @@ services:
 volumes:
   pgdata:
   cloakdata:
+  redisdata:

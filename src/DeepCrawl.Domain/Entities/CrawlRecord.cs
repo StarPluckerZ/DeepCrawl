@@ -9,38 +9,42 @@ public class CrawlRecord
     [Column(IsPrimary = true, IsIdentity = true)]
     public long Id { get; set; }
 
-    [Column(DbType = "varchar(2048)", IsNullable = false)]
+    [Column(StringLength = 2048, IsNullable = false)]
     public string Url { get; set; } = null!;
 
-    [Column(DbType = "varchar(64)")]
+    [Column(StringLength = 64)]
     public string? HtmlHash { get; set; }
 
-    [Column(DbType = "varchar(64)")]
+    [Column(StringLength = 64)]
     public string? ContextHash { get; set; }
 
-    [Column(DbType = "text")]
+    [Column(StringLength = -1)]
     public string? MarkdownContent { get; set; }
 
-    [Column(DbType = "text")]
+    [Column(StringLength = -1)]
     public string? CleanedMarkdown { get; set; }
 
-    [Column(DbType = "text")]
+    [Column(StringLength = -1)]
     public string? CleanedHtml { get; set; }
 
-    [Column(DbType = "text")]
+    [Column(StringLength = -1)]
     public string? MetadataJson { get; set; }
 
-    [Column(DbType = "varchar(32)", IsNullable = false)]
-    public string Status { get; set; } = CrawlStatus.Pending.ToString();
+    [Column(StringLength = 32, IsNullable = false, MapType = typeof(string))]
+    public CrawlStatus Status { get; set; } = CrawlStatus.Pending;
 
-    [Column(DbType = "varchar(64)")]
+    [Column(StringLength = 64)]
     public string? ErrorCode { get; set; }
 
-    [Column(DbType = "varchar(1024)")]
+    [Column(StringLength = 1024)]
     public string? ErrorMessage { get; set; }
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
+    public DateTime CreatedAt { get; set; } 
+    
+    
     public DateTime? CompletedAt { get; set; }
-    public DateTime LastAccessedAt { get; set; } = DateTime.UtcNow;
+    
+    public DateTime LastAccessedAt { get; set; }
 }
 

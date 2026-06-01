@@ -1,8 +1,11 @@
+using System.Text.Json;
 using DeepCrawl.Core.Dtos;
 using DeepCrawl.Core.Hashing;
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Entities;
 using DeepCrawl.Domain.Enums;
+using DeepCrawl.Domain.Models;
+using FreeSql;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -14,42 +17,22 @@ public class CrawlPipelineOptions
     public bool AiConfigured { get; set; }
 }
 
-public class CrawlPipeline
+public class CrawlPipeline(
+    ICloakBrowserClient client,
+    CleanPipeline cleanPipeline,
+    IBaseRepository<CrawlRecord> crawlRecordRepo,
+    IOptions<CrawlPipelineOptions> options,
+    IRedisClient redisClient,
+    ILogger<CrawlPipeline> logger)
 {
-    private readonly ICloakBrowserClient _client;
-    private readonly CleanPipeline _cleanPipeline;
-    private readonly ICrawlRepository _repository;
-    private readonly ITokenValidator? _tokenValidator;
-    private readonly IOptions<CrawlPipelineOptions> _options;
-    private readonly ILogger<CrawlPipeline> _logger;
-
-    public CrawlPipeline(
-        ICloakBrowserClient client,
-        CleanPipeline cleanPipeline,
-        ICrawlRepository repository,
-        IOptions<CrawlPipelineOptions> options,
-        ILogger<CrawlPipeline> logger,
-        ITokenValidator? tokenValidator = null)
+    private CacheKey GetCacheKey(string contextHash) => new CacheKey("Crawl", contextHash, TimeSpan.FromHours(1));
+    
+    public async Task<ScrapeResponse> ScrapeAsync(ScrapeRequest request, CancellationToken ct = default)
     {
-        _client = client;
-        _cleanPipeline = cleanPipeline;
-        _repository = repository;
-        _options = options;
-        _logger = logger;
-        _tokenValidator = tokenValidator;
-    }
-
-    public async Task<ScrapeResponse> ScrapeAsync(ScrapeRequest request, string? token, CancellationToken ct = default)
-    {
-        if (_tokenValidator is not null && !await _tokenValidator.ValidateAsync(token, ct))
-        {
-            return new ScrapeResponse { Success = false, Error = "Unauthorized: Invalid or missing API token." };
-        }
-
-        _logger.LogInformation("Scrape requested for {Url}", request.Url);
+        logger.LogInformation("Scrape requested for {Url}", request.Url);
 
         var formats = request.Formats ?? new List<string> { "markdown" };
-        var useAi = _options.Value.AiConfigured;
+        var useAi = options.Value.AiConfigured;
         var context = new CleanContext
         {
             Url = request.Url,
@@ -59,22 +42,22 @@ public class CrawlPipeline
 
         var contextHash = context.ComputeContextHash();
 
-        var cached = await _repository.GetByUrlAsync(request.Url, ct);
-        if (cached is { Status: nameof(CrawlStatus.Completed) } && IsCacheFresh(cached) && cached.ContextHash == contextHash)
+        var cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash), ct);
+        if (cached is not null)
         {
-            cached.LastAccessedAt = DateTime.UtcNow;
-            await _repository.UpsertAsync(cached, ct);
-            _logger.LogInformation("Cache hit for {Url}", request.Url);
+            logger.LogInformation("Redis cache hit for {Url}", request.Url);
+            return cached;
+        }
 
-            var cachedMarkdown = useAi
-                ? (cached.CleanedMarkdown ?? cached.MarkdownContent)
-                : cached.MarkdownContent;
-
-            var cachedMetadata = cached.MetadataJson is not null
-                ? System.Text.Json.JsonSerializer.Deserialize<CrawlMetadata>(cached.MetadataJson)
-                : null;
-
-            return BuildResponse(formats, cachedMarkdown, cached.CleanedHtml, cachedMetadata, request.Url, 200, "text/html");
+        await using var handle = await redisClient
+            .GetLock($"Crawl:{request.Url}")
+            .AcquireAsync(TimeSpan.FromSeconds(60), ct);
+        // double check
+        cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash), ct);
+        if (cached is not null)
+        {
+            logger.LogInformation("Redis cache hit after lock for {Url}", request.Url);
+            return cached;
         }
 
         string rawHtml;
@@ -82,7 +65,7 @@ public class CrawlPipeline
         string contentType = "text/html";
         try
         {
-            rawHtml = await _client.FetchHtmlAsync(request.Url, request.WaitUntil, request.Proxy, ct);
+            rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, request.Proxy, ct);
         }
         catch (CloakBrowserException ex)
         {
@@ -91,27 +74,31 @@ public class CrawlPipeline
 
         var htmlHash = HtmlHashService.ComputeSha256(rawHtml);
 
-        var sameHash = await _repository.GetByUrlAndHashAsync(request.Url, htmlHash, contextHash, ct);
+        var sameHash = await crawlRecordRepo
+            .Where(c => c.Url == request.Url && c.HtmlHash == htmlHash)
+            .FirstAsync(ct);
         if (sameHash is not null)
         {
-            sameHash.LastAccessedAt = DateTime.UtcNow;
-            await _repository.UpsertAsync(sameHash, ct);
-            _logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
+            sameHash.LastAccessedAt = DateTime.Now;
+            await crawlRecordRepo.UpdateAsync(sameHash, ct);
+            logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
 
             var cachedMd = useAi
                 ? (sameHash.CleanedMarkdown ?? sameHash.MarkdownContent)
                 : sameHash.MarkdownContent;
 
             var cachedMetadata2 = sameHash.MetadataJson is not null
-                ? System.Text.Json.JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
+                ? JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
                 : null;
 
-            return BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata2, request.Url, statusCode, contentType);
+            var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata2, request.Url, statusCode, contentType);
+            await redisClient.SetAsync(GetCacheKey(contextHash), cacheResponse, ct);
+            return cacheResponse;
         }
 
         context.StatusCode = statusCode;
         context.ContentType = contentType;
-        var cleanResult = await _cleanPipeline.ExecuteAsync(rawHtml, context, ct);
+        var cleanResult = await cleanPipeline.ExecuteAsync(rawHtml, context, ct);
 
         var record = new CrawlRecord
         {
@@ -122,17 +109,18 @@ public class CrawlPipeline
             CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null,
             CleanedHtml = cleanResult.CleanedHtml,
             MetadataJson = cleanResult.Metadata is not null
-                ? System.Text.Json.JsonSerializer.Serialize(cleanResult.Metadata)
+                ? JsonSerializer.Serialize(cleanResult.Metadata)
                 : null,
-            Status = CrawlStatus.Completed.ToString(),
-            CreatedAt = cached?.CreatedAt ?? DateTime.UtcNow,
-            CompletedAt = DateTime.UtcNow,
-            LastAccessedAt = DateTime.UtcNow
+            Status = CrawlStatus.Completed,
+            CompletedAt = DateTime.Now,
+            LastAccessedAt = DateTime.Now
         };
 
-        await _repository.UpsertAsync(record, ct);
+        await crawlRecordRepo.InsertAsync(record, ct);
 
-        return BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
+        var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
+        await redisClient.SetAsync(GetCacheKey(contextHash), response, ct);
+        return response;
     }
 
     private static ScrapeResponse BuildResponse(IList<string> formats, string? markdown, string? cleanedHtml, CrawlMetadata? metadata, string url, int? statusCode, string? contentType)
@@ -154,44 +142,4 @@ public class CrawlPipeline
         };
     }
 
-    public async Task<CrawlResponse?> GetContentAsync(string url, CancellationToken ct = default)
-    {
-        var cached = await _repository.GetByUrlAsync(url, ct);
-        if (cached is { Status: nameof(CrawlStatus.Completed) })
-        {
-            return new CrawlResponse
-            {
-                Url = url,
-                Markdown = cached.CleanedMarkdown ?? cached.MarkdownContent,
-                Status = CrawlStatus.Completed.ToString(),
-                FromCache = true,
-                AiCleaned = cached.CleanedMarkdown is not null
-            };
-        }
-        return null;
-    }
-
-    public async Task<CrawlResponse?> GetByIdAsync(long id, CancellationToken ct = default)
-    {
-        var record = await _repository.GetByIdAsync(id, ct);
-        if (record is null) return null;
-
-        return new CrawlResponse
-        {
-            Url = record.Url,
-            Markdown = record.CleanedMarkdown ?? record.MarkdownContent,
-            Status = record.Status,
-            FromCache = true,
-            AiCleaned = record.CleanedMarkdown is not null,
-            ErrorCode = record.ErrorCode,
-            ErrorMessage = record.ErrorMessage
-        };
-    }
-
-    private bool IsCacheFresh(CrawlRecord record)
-    {
-        if (record.CompletedAt is null) return false;
-        var ttl = TimeSpan.FromMinutes(_options.Value.DefaultTtlMinutes);
-        return DateTime.UtcNow - record.CompletedAt.Value < ttl;
-    }
 }

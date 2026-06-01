@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Enums;
+using DeepCrawl.Domain.Models;
 using Microsoft.Extensions.Logging;
 
 namespace DeepCrawl.Infrastructure.Cleaning;
@@ -7,11 +10,13 @@ namespace DeepCrawl.Infrastructure.Cleaning;
 public class OpenAICleanStep : ICleanStep
 {
     private readonly IAIMarkdownCleaner _aiCleaner;
+    private readonly IRedisClient _redis;
     private readonly ILogger<OpenAICleanStep> _logger;
 
-    public OpenAICleanStep(IAIMarkdownCleaner aiCleaner, ILogger<OpenAICleanStep> logger)
+    public OpenAICleanStep(IAIMarkdownCleaner aiCleaner, IRedisClient redis, ILogger<OpenAICleanStep> logger)
     {
         _aiCleaner = aiCleaner;
+        _redis = redis;
         _logger = logger;
     }
 
@@ -25,6 +30,9 @@ public class OpenAICleanStep : ICleanStep
             _logger.LogDebug("AI cleaning skipped per request for {Url}", context.Url);
             return new CleanResult { Output = input, AiCleaned = false };
         }
+
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
+        await using var handle = await _redis.GetLock($"AIClean:{hash}").AcquireAsync(TimeSpan.FromSeconds(30), ct);
 
         try
         {

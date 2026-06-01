@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="FreeSql" />
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="DistributedLock.Redis" />
   </ItemGroup>
 
 </Project>

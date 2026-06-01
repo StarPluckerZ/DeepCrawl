@@ -5,15 +5,17 @@ using DeepCrawl.Domain.Entities;
 using DeepCrawl.Infrastructure.AI;
 using DeepCrawl.Infrastructure.Auth;
 using DeepCrawl.Infrastructure.Cleaning;
+using DeepCrawl.Infrastructure.Caching;
 using DeepCrawl.Infrastructure.Clients;
-using DeepCrawl.Infrastructure.Persistence;
 using FreeSql;
 using FreeSql.DataAnnotations;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.AI;
 using Polly;
 using Polly.Extensions.Http;
 using Scalar.AspNetCore;
 using Serilog;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,11 +24,21 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+builder.Services.AddAuthentication("ApiToken")
+    .AddScheme<AuthenticationSchemeOptions, ApiTokenAuthenticationHandler>("ApiToken", null);
+builder.Services.AddAuthorization();
+
 builder.Services.Configure<CloakBrowserClientOptions>(builder.Configuration.GetSection("CloakBrowser"));
 builder.Services.Configure<AIMarkdownCleanerOptions>(builder.Configuration.GetSection("AI"));
 builder.Services.Configure<CrawlPipelineOptions>(builder.Configuration.GetSection("Cache"));
 builder.Services.PostConfigure<CrawlPipelineOptions>(opts =>
     opts.AiConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["AI:ApiKey"]));
+
+var redisOptions = builder.Configuration.GetSection("Redis").Get<RedisOptions>() ?? new RedisOptions();
+builder.Services.AddSingleton(redisOptions);
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect($"{redisOptions.Host}:{redisOptions.Port},password={redisOptions.Password}"));
+builder.Services.AddSingleton<IRedisClient, RedisClient>();
 
 var fsql = new FreeSqlBuilder()
     .UseConnectionString(DataType.PostgreSQL, builder.Configuration.GetConnectionString("PostgreSQL"))
@@ -40,6 +52,7 @@ foreach (var type in entityTypes)
     fsql.CodeFirst.ConfigEntity(type, _ => { });
 
 builder.Services.AddSingleton<IFreeSql>(fsql);
+builder.Services.AddFreeRepository();
 
 // Generate initial API token if none exist
 var tokenCount = fsql.Select<ApiToken>().Count();
@@ -63,7 +76,6 @@ if (tokenCount == 0)
     Console.WriteLine();
 }
 
-builder.Services.AddScoped<ICrawlRepository, CrawlRepository>();
 
 builder.Services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =>
 {
@@ -118,5 +130,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 app.Run();

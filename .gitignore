@@ -8,10 +8,11 @@ obj/
 packages/
 *.nupkg
 
-# Rider / IDE
+# IDE
 .idea/
 *.sln.iml
 .vs/
+.vscode/
 
 # Environment
 .env

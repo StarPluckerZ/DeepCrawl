@@ -14,7 +14,7 @@ public class CleanContext
 
     public string ComputeContextHash()
     {
-        var key = $"UseAiClean={UseAiClean}";
+        var key = $"UseAiClean={UseAiClean}&Formats={string.Join(',', Formats)}&Url={Url}";
         var bytes = Encoding.UTF8.GetBytes(key);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexStringLower(hash);
