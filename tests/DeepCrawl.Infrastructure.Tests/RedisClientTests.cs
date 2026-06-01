@@ -17,7 +17,7 @@ public class RedisClientTests : IAsyncLifetime
         var options = new RedisOptions
         {
             Host = "localhost",
-            Port = 6379,
+            Port = int.Parse(Environment.GetEnvironmentVariable("TEST_REDIS_PORT") ?? "6379"),
             Password = "",
             Database = 0,
             Prefix = "test",

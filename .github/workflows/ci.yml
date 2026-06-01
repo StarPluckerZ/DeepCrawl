@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  HARBOR_URL: ${{ secrets.HARBOR_URL }}
+  HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+  HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+  BRANCH: ${{ github.ref_name }}
+  TEST_REDIS_PORT: "16379"
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Test
+        run: dotnet test -c Release --no-build --verbosity normal
+
+      - name: Docker login
+        run: echo "$HARBOR_PASSWORD" | docker login "$HARBOR_URL" -u "$HARBOR_USERNAME" --password-stdin
+
+      - name: Build & push API
+        run: |
+          IMAGE="$HARBOR_URL/deep_crawl/deepcrawl-api"
+          TAG="${BRANCH}-$(git rev-parse --short HEAD)"
+          docker build -f src/DeepCrawl.Api/Dockerfile -t "$IMAGE:$TAG" -t "$IMAGE:${BRANCH}-latest" .
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:${BRANCH}-latest"
+
+      - name: Build & push cloak-service
+        run: |
+          IMAGE="$HARBOR_URL/deep_crawl/deepcrawl-cloak"
+          TAG="${BRANCH}-$(git rev-parse --short HEAD)"
+          docker build -f cloak-service/Dockerfile -t "$IMAGE:$TAG" -t "$IMAGE:${BRANCH}-latest" cloak-service
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:${BRANCH}-latest"
+
+      - name: Cleanup disk
+        run: |
+          docker builder prune --all --force
+          for IMG in "$HARBOR_URL/deep_crawl/deepcrawl-api" "$HARBOR_URL/deep_crawl/deepcrawl-cloak"; do
+            docker images "$IMG" --format '{{.Tag}}' 2>/dev/null | grep "^${BRANCH}-" | sort -r | tail -n +4 | xargs -r docker rmi
+          done
+          docker image prune -f
