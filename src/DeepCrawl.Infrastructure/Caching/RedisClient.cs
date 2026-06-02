@@ -112,7 +112,7 @@ public class RedisClient : IRedisClient
         ct.ThrowIfCancellationRequested();
         var batch = _db.CreateBatch();
         foreach (var (key, value) in entries)
-            await batch.StringSetAsync(FullKey(key), RedisSerializer.Serialize(value), GetExpiry(key));
+            _ = batch.StringSetAsync(FullKey(key), RedisSerializer.Serialize(value), GetExpiry(key));
         ct.ThrowIfCancellationRequested();
         batch.Execute();
     }
