@@ -67,9 +67,11 @@ jobs:
           docker push "$IMAGE:${BRANCH}-latest"
 
       - name: Cleanup disk
+        shell: bash {0}
         run: |
-          docker builder prune --all --force
+          docker builder prune --all --force || true
           for IMG in "$HARBOR_URL/deep_crawl/deepcrawl-api" "$HARBOR_URL/deep_crawl/deepcrawl-cloak"; do
-            docker images "$IMG" --format '{{.Tag}}' 2>/dev/null | grep "^${BRANCH}-" | sort -r | tail -n +4 | xargs -r docker rmi
+            docker images "$IMG" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+              | grep "^${IMG}:${BRANCH}-" | sort -r | tail -n +4 | xargs -r docker rmi || true
           done
-          docker image prune -f
+          docker image prune -f || true
