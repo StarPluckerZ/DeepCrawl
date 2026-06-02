@@ -11,5 +11,5 @@ public class CrawlConfig
     public int MinTextLength { get; set; } = 200;
 
     public bool ProxyConfigured => !string.IsNullOrWhiteSpace(ProxyAddress);
-    public string ProxyUrl => $"http://{ProxyUsername}:{ProxyPassword}@{ProxyAddress}:{ProxyPort}";
+    public string ProxyUrl => $"http://{Uri.EscapeDataString(ProxyUsername ?? "")}:{Uri.EscapeDataString(ProxyPassword ?? "")}@{ProxyAddress}:{ProxyPort}";
 }

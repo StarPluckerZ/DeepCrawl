@@ -144,11 +144,11 @@ public class CrawlPipeline(
                 ? (sameHash.CleanedMarkdown ?? sameHash.MarkdownContent)
                 : sameHash.MarkdownContent;
 
-            var cachedMetadata2 = sameHash.MetadataJson is not null
+            var cachedMetadata = sameHash.MetadataJson is not null
                 ? JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
                 : null;
 
-            var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata2, request.Url, statusCode, contentType);
+            var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType);
             await redisClient.SetAsync(GetCacheKey(contextHash), cacheResponse, ct);
             return cacheResponse;
         }

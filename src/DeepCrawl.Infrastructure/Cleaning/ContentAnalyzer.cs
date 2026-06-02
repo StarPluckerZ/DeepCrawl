@@ -1,4 +1,3 @@
-using AngleSharp;
 using AngleSharp.Html.Parser;
 using DeepCrawl.Domain.Abstractions;
 
