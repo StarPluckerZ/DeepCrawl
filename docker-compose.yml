@@ -51,6 +51,7 @@ services:
       - "5000:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      TZ: Asia/Shanghai
       ConnectionStrings__PostgreSQL: Host=postgres;Database=deepcrawl;Username=deepcrawl;Password=${POSTGRES_PASSWORD}
       CloakBrowser__BaseUrl: http://cloak-service:8000
       Redis__Host: redis
@@ -58,6 +59,9 @@ services:
       AI__BaseUrl: ${AI_BASEURL}
       AI__ApiKey: ${AI_APIKEY}
       AI__Model: ${AI_MODEL}
+      Crawl__MinTextLength: "200"
+    volumes:
+      - ./logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
