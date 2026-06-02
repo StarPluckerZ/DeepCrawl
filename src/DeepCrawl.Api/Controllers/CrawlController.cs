@@ -8,9 +8,9 @@ namespace DeepCrawl.Api.Controllers;
 [ApiController]
 public class CrawlController : ControllerBase
 {
-    private readonly CrawlPipeline _pipeline;
+    private readonly ICrawlPipeline _pipeline;
 
-    public CrawlController(CrawlPipeline pipeline)
+    public CrawlController(ICrawlPipeline pipeline)
     {
         _pipeline = pipeline;
     }
@@ -22,7 +22,7 @@ public class CrawlController : ControllerBase
         var result = await _pipeline.ScrapeAsync(request, ct);
 
         if (!result.Success)
-            return Unauthorized(result);
+            return StatusCode(502, result);
 
         return Ok(result);
     }

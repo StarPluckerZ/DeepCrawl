@@ -1,7 +1,9 @@
+using System.Net;
 using System.Security.Cryptography;
 using DeepCrawl.Core.Services;
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Entities;
+using DeepCrawl.Domain.Models;
 using DeepCrawl.Infrastructure.AI;
 using DeepCrawl.Infrastructure.Auth;
 using DeepCrawl.Infrastructure.Cleaning;
@@ -30,9 +32,10 @@ builder.Services.AddAuthorization();
 
 builder.Services.Configure<CloakBrowserClientOptions>(builder.Configuration.GetSection("CloakBrowser"));
 builder.Services.Configure<AIMarkdownCleanerOptions>(builder.Configuration.GetSection("AI"));
-builder.Services.Configure<CrawlPipelineOptions>(builder.Configuration.GetSection("Cache"));
-builder.Services.PostConfigure<CrawlPipelineOptions>(opts =>
-    opts.AiConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["AI:ApiKey"]));
+
+var crawlConfig = builder.Configuration.GetSection("Crawl").Get<CrawlConfig>() ?? new CrawlConfig();
+crawlConfig.AiConfigured = !string.IsNullOrWhiteSpace(builder.Configuration["AI:ApiKey"]);
+builder.Services.AddSingleton(crawlConfig);
 
 var redisOptions = builder.Configuration.GetSection("Redis").Get<RedisOptions>() ?? new RedisOptions();
 builder.Services.AddSingleton(redisOptions);
@@ -87,6 +90,33 @@ builder.Services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =
     .HandleTransientHttpError()
     .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
 
+builder.Services.AddHttpClient("Direct", c =>
+{
+    if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
+        c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
+    c.Timeout = TimeSpan.FromSeconds(30);
+});
+
+if (crawlConfig.ProxyConfigured)
+{
+    builder.Services.AddHttpClient("ProxyFetcher", c =>
+    {
+        if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
+            c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
+        c.Timeout = TimeSpan.FromSeconds(30);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        Proxy = new WebProxy($"{crawlConfig.ProxyAddress}:{crawlConfig.ProxyPort}")
+        {
+            Credentials = new NetworkCredential(crawlConfig.ProxyUsername, crawlConfig.ProxyPassword)
+        },
+        UseProxy = true
+    });
+}
+
+builder.Services.AddSingleton<IDirectHttpFetcher, DirectHttpFetcher>();
+
 var endpoint = builder.Configuration["AI:BaseUrl"] ?? "https://api.siliconflow.cn/v1/chat/completions";
 var apiKey = builder.Configuration["AI:ApiKey"] ?? "";
 var model = builder.Configuration["AI:Model"] ?? "Qwen/Qwen3-8B";
@@ -103,12 +133,13 @@ builder.Services.AddSingleton(new AIMarkdownCleanerOptions
     ThinkingLevel = thinkingLevel
 });
 
-builder.Services.AddSingleton<IChatClient>(new OpenAI.OpenAIClient(
+var openAiClient = new OpenAI.OpenAIClient(
     new System.ClientModel.ApiKeyCredential(apiKey),
-    new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) })
-    .GetChatClient(model)
-    .AsIChatClient());
+    new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) });
+builder.Services.AddSingleton(openAiClient);
+builder.Services.AddSingleton<IChatClient>(openAiClient.GetChatClient(model).AsIChatClient());
 
+builder.Services.AddSingleton<IContentAnalyzer, ContentAnalyzer>();
 builder.Services.AddSingleton<IHtmlCleaner, AngleSharpHtmlCleaner>();
 builder.Services.AddSingleton<IMarkdownConverter, ReverseMarkdownConverter>();
 builder.Services.AddSingleton<IAIMarkdownCleaner, OpenAIMarkdownCleaner>();
@@ -120,7 +151,7 @@ builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.Reve
 builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.OpenAICleanStep>();
 builder.Services.AddSingleton<CleanPipeline>();
 builder.Services.AddSingleton<ITokenValidator, TokenValidator>();
-builder.Services.AddScoped<CrawlPipeline>();
+builder.Services.AddScoped<ICrawlPipeline, CrawlPipeline>();
 
 var app = builder.Build();
 

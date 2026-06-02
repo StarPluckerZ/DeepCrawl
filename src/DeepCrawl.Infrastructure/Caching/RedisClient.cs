@@ -23,7 +23,11 @@ public class RedisClient : IRedisClient
     private string FullKey(CacheKey key) => $"{_options.Prefix}:{key.Prefix}:{key.Key}";
     private TimeSpan GetExpiry(CacheKey key) => key.Expiry ?? _options.DefaultTtl;
 
-    public T? Get<T>(CacheKey key) => GetAsync<T>(key).GetAwaiter().GetResult();
+    public T? Get<T>(CacheKey key)
+    {
+        var val = _db.StringGet(FullKey(key));
+        return RedisSerializer.Deserialize<T>(val);
+    }
 
     public async Task<T?> GetAsync<T>(CacheKey key, CancellationToken ct = default)
     {
@@ -31,7 +35,12 @@ public class RedisClient : IRedisClient
         return RedisSerializer.Deserialize<T>(val);
     }
 
-    public void Set<T>(CacheKey key, T value) => SetAsync(key, value).GetAwaiter().GetResult();
+    public void Set<T>(CacheKey key, T value)
+    {
+        var full = FullKey(key);
+        var json = RedisSerializer.Serialize(value);
+        _db.StringSet(full, json, GetExpiry(key));
+    }
 
     public async Task SetAsync<T>(CacheKey key, T value, CancellationToken ct = default)
     {
@@ -40,7 +49,7 @@ public class RedisClient : IRedisClient
         await _db.StringSetAsync(full, json, GetExpiry(key)).WaitAsync(ct);
     }
 
-    public bool Delete(CacheKey key) => DeleteAsync(key).GetAwaiter().GetResult();
+    public bool Delete(CacheKey key) => _db.KeyDelete(FullKey(key));
 
     public async Task<bool> DeleteAsync(CacheKey key, CancellationToken ct = default)
     {
@@ -100,13 +109,32 @@ public class RedisClient : IRedisClient
     public async Task SetManyAsync<T>(KeyValuePair<CacheKey, T>[] entries, CancellationToken ct = default)
     {
         if (entries.Length == 0) return;
+        ct.ThrowIfCancellationRequested();
         var batch = _db.CreateBatch();
         foreach (var (key, value) in entries)
-            _ = batch.StringSetAsync(FullKey(key), RedisSerializer.Serialize(value), GetExpiry(key));
+            await batch.StringSetAsync(FullKey(key), RedisSerializer.Serialize(value), GetExpiry(key));
+        ct.ThrowIfCancellationRequested();
         batch.Execute();
     }
 
-    public long DeleteByPrefix(string prefix) => DeleteByPrefixAsync(prefix).GetAwaiter().GetResult();
+    public long DeleteByPrefix(string prefix)
+    {
+        var pattern = $"{prefix}*";
+        var result = _db.ScriptEvaluate("""
+            local cursor = '0'
+            local count = 0
+            repeat
+                local r = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', 100)
+                cursor = r[1]
+                for _,k in ipairs(r[2]) do
+                    redis.call('DEL', k)
+                    count = count + 1
+                end
+            until cursor == '0'
+            return count
+            """, values: new RedisValue[] { pattern });
+        return (long)result;
+    }
 
     public async Task<long> DeleteByPrefixAsync(string prefix, CancellationToken ct = default)
     {

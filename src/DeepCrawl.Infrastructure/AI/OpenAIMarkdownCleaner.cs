@@ -101,7 +101,7 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
             _logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars", rawMarkdown.Length, cleaned.Length);
             return cleaned;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "AI cleaning failed, returning raw markdown");
             return rawMarkdown;

@@ -7,23 +7,18 @@ using DeepCrawl.Domain.Enums;
 using DeepCrawl.Domain.Models;
 using FreeSql;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DeepCrawl.Core.Services;
-
-public class CrawlPipelineOptions
-{
-    public int DefaultTtlMinutes { get; set; } = 60;
-    public bool AiConfigured { get; set; }
-}
 
 public class CrawlPipeline(
     ICloakBrowserClient client,
     CleanPipeline cleanPipeline,
     IBaseRepository<CrawlRecord> crawlRecordRepo,
-    IOptions<CrawlPipelineOptions> options,
     IRedisClient redisClient,
-    ILogger<CrawlPipeline> logger)
+    IDirectHttpFetcher directFetcher,
+    IContentAnalyzer contentAnalyzer,
+    CrawlConfig crawlConfig,
+    ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private CacheKey GetCacheKey(string contextHash) => new CacheKey("Crawl", contextHash, TimeSpan.FromHours(1));
     
@@ -32,7 +27,7 @@ public class CrawlPipeline(
         logger.LogInformation("Scrape requested for {Url}", request.Url);
 
         var formats = request.Formats ?? new List<string> { "markdown" };
-        var useAi = options.Value.AiConfigured;
+        var useAi = crawlConfig.AiConfigured;
         var context = new CleanContext
         {
             Url = request.Url,
@@ -60,19 +55,81 @@ public class CrawlPipeline(
             return cached;
         }
 
-        string rawHtml;
-        int? statusCode = 200;
-        string contentType = "text/html";
+        var proxyConfigured = crawlConfig.ProxyConfigured;
+        var proxyUrl = crawlConfig.ProxyUrl;
+
+        string? rawHtml = null;
+        var success = false;
+        string? lastError = null;
+
+        // Tier 1: HttpClient direct
         try
         {
-            rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, request.Proxy, ct);
+            rawHtml = await directFetcher.FetchDirectAsync(request.Url, ct);
+            if (contentAnalyzer.GetTextLength(rawHtml) >= crawlConfig.MinTextLength)
+                success = true;
+            else
+                logger.LogDebug("Tier 1 (HttpClient) got JS skeleton for {Url}", request.Url);
         }
-        catch (CloakBrowserException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new ScrapeResponse { Success = false, Error = ex.Message };
+            logger.LogDebug("Tier 1 (HttpClient) failed for {Url}: {Msg}", request.Url, ex.Message);
         }
 
-        var htmlHash = HtmlHashService.ComputeSha256(rawHtml);
+        // Tier 2: HttpClient + proxy
+        if (!success && proxyConfigured)
+        {
+            try
+            {
+                rawHtml = await directFetcher.FetchWithProxyAsync(request.Url, ct);
+                if (contentAnalyzer.GetTextLength(rawHtml) >= crawlConfig.MinTextLength)
+                    success = true;
+                else
+                    logger.LogDebug("Tier 2 (HttpClient+proxy) got JS skeleton for {Url}", request.Url);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug("Tier 2 (HttpClient+proxy) failed for {Url}: {Msg}", request.Url, ex.Message);
+            }
+        }
+
+        // Tier 3: Cloak browser
+        if (!success)
+        {
+            try
+            {
+                rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, null, ct);
+                success = !string.IsNullOrWhiteSpace(rawHtml);
+            }
+            catch (CloakBrowserException ex)
+            {
+                lastError = ex.Message;
+                logger.LogDebug("Tier 3 (Cloak) failed for {Url}: {Msg}", request.Url, ex.Message);
+            }
+        }
+
+        // Tier 4: Cloak browser + proxy
+        if (!success && proxyConfigured)
+        {
+            try
+            {
+                rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, proxyUrl, ct);
+                success = !string.IsNullOrWhiteSpace(rawHtml);
+            }
+            catch (CloakBrowserException ex)
+            {
+                lastError = ex.Message;
+                logger.LogDebug("Tier 4 (Cloak+proxy) failed for {Url}: {Msg}", request.Url, ex.Message);
+            }
+        }
+
+        if (!success)
+            return new ScrapeResponse { Success = false, Error = lastError ?? "All fetch tiers failed" };
+
+        int? statusCode = 200;
+        string contentType = "text/html";
+
+        var htmlHash = HtmlHashService.ComputeSha256(rawHtml!);
 
         var sameHash = await crawlRecordRepo
             .Where(c => c.Url == request.Url && c.HtmlHash == htmlHash)
@@ -98,25 +155,45 @@ public class CrawlPipeline(
 
         context.StatusCode = statusCode;
         context.ContentType = contentType;
-        var cleanResult = await cleanPipeline.ExecuteAsync(rawHtml, context, ct);
+        var cleanResult = await cleanPipeline.ExecuteAsync(rawHtml!, context, ct);
 
-        var record = new CrawlRecord
+        var existing = await crawlRecordRepo
+            .Where(c => c.Url == request.Url)
+            .FirstAsync(ct);
+        if (existing is not null)
         {
-            Url = request.Url,
-            HtmlHash = htmlHash,
-            ContextHash = contextHash,
-            MarkdownContent = cleanResult.Output,
-            CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null,
-            CleanedHtml = cleanResult.CleanedHtml,
-            MetadataJson = cleanResult.Metadata is not null
+            existing.HtmlHash = htmlHash;
+            existing.ContextHash = contextHash;
+            existing.MarkdownContent = cleanResult.Output;
+            existing.CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null;
+            existing.CleanedHtml = cleanResult.CleanedHtml;
+            existing.MetadataJson = cleanResult.Metadata is not null
                 ? JsonSerializer.Serialize(cleanResult.Metadata)
-                : null,
-            Status = CrawlStatus.Completed,
-            CompletedAt = DateTime.Now,
-            LastAccessedAt = DateTime.Now
-        };
-
-        await crawlRecordRepo.InsertAsync(record, ct);
+                : null;
+            existing.Status = CrawlStatus.Completed;
+            existing.CompletedAt = DateTime.Now;
+            existing.LastAccessedAt = DateTime.Now;
+            await crawlRecordRepo.UpdateAsync(existing, ct);
+        }
+        else
+        {
+            var record = new CrawlRecord
+            {
+                Url = request.Url,
+                HtmlHash = htmlHash,
+                ContextHash = contextHash,
+                MarkdownContent = cleanResult.Output,
+                CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null,
+                CleanedHtml = cleanResult.CleanedHtml,
+                MetadataJson = cleanResult.Metadata is not null
+                    ? JsonSerializer.Serialize(cleanResult.Metadata)
+                    : null,
+                Status = CrawlStatus.Completed,
+                CompletedAt = DateTime.Now,
+                LastAccessedAt = DateTime.Now
+            };
+            await crawlRecordRepo.InsertAsync(record, ct);
+        }
 
         var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
         await redisClient.SetAsync(GetCacheKey(contextHash), response, ct);

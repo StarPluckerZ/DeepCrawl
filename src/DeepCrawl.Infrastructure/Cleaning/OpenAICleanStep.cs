@@ -44,7 +44,7 @@ public class OpenAICleanStep : ICleanStep
             }
             return new CleanResult { Output = output, AiCleaned = true };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "AI cleaning failed for {Url}, returning rule-based result", context.Url);
             return new CleanResult { Output = input, AiCleaned = false };
