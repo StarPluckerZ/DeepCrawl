@@ -116,6 +116,7 @@ if (crawlConfig.ProxyConfigured)
 }
 
 builder.Services.AddSingleton<IDirectHttpFetcher, DirectHttpFetcher>();
+builder.Services.AddSingleton<TieredHttpFetcher>();
 
 var endpoint = builder.Configuration["AI:BaseUrl"] ?? "https://api.siliconflow.cn/v1/chat/completions";
 var apiKey = builder.Configuration["AI:ApiKey"] ?? "";

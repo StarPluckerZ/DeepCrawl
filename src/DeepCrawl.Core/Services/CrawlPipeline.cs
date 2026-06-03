@@ -11,12 +11,10 @@ using Microsoft.Extensions.Logging;
 namespace DeepCrawl.Core.Services;
 
 public class CrawlPipeline(
-    ICloakBrowserClient client,
     CleanPipeline cleanPipeline,
     IBaseRepository<CrawlRecord> crawlRecordRepo,
     IRedisClient redisClient,
-    IDirectHttpFetcher directFetcher,
-    IContentAnalyzer contentAnalyzer,
+    TieredHttpFetcher tieredFetcher,
     CrawlConfig crawlConfig,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
@@ -55,76 +53,11 @@ public class CrawlPipeline(
             return cached;
         }
 
-        var proxyConfigured = crawlConfig.ProxyConfigured;
-        var proxyUrl = crawlConfig.ProxyUrl;
-
-        string? rawHtml = null;
-        var success = false;
-        string? lastError = null;
-
-        // Tier 1: HttpClient direct
-        try
-        {
-            rawHtml = await directFetcher.FetchDirectAsync(request.Url, ct);
-            if (contentAnalyzer.GetTextLength(rawHtml) >= crawlConfig.MinTextLength)
-                success = true;
-            else
-                logger.LogDebug("Tier 1 (HttpClient) got JS skeleton for {Url}", request.Url);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogDebug("Tier 1 (HttpClient) failed for {Url}: {Msg}", request.Url, ex.Message);
-        }
-
-        // Tier 2: HttpClient + proxy
-        if (!success && proxyConfigured)
-        {
-            try
-            {
-                rawHtml = await directFetcher.FetchWithProxyAsync(request.Url, ct);
-                if (contentAnalyzer.GetTextLength(rawHtml) >= crawlConfig.MinTextLength)
-                    success = true;
-                else
-                    logger.LogDebug("Tier 2 (HttpClient+proxy) got JS skeleton for {Url}", request.Url);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogDebug("Tier 2 (HttpClient+proxy) failed for {Url}: {Msg}", request.Url, ex.Message);
-            }
-        }
-
-        // Tier 3: Cloak browser
-        if (!success)
-        {
-            try
-            {
-                rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, null, ct);
-                success = !string.IsNullOrWhiteSpace(rawHtml);
-            }
-            catch (CloakBrowserException ex)
-            {
-                lastError = ex.Message;
-                logger.LogDebug("Tier 3 (Cloak) failed for {Url}: {Msg}", request.Url, ex.Message);
-            }
-        }
-
-        // Tier 4: Cloak browser + proxy
-        if (!success && proxyConfigured)
-        {
-            try
-            {
-                rawHtml = await client.FetchHtmlAsync(request.Url, request.WaitUntil, proxyUrl, ct);
-                success = !string.IsNullOrWhiteSpace(rawHtml);
-            }
-            catch (CloakBrowserException ex)
-            {
-                lastError = ex.Message;
-                logger.LogDebug("Tier 4 (Cloak+proxy) failed for {Url}: {Msg}", request.Url, ex.Message);
-            }
-        }
+        var (success, rawHtml, fetchError) = await tieredFetcher.FetchAsync(
+            request.Url, request.WaitUntil, ct);
 
         if (!success)
-            return new ScrapeResponse { Success = false, Error = lastError ?? "All fetch tiers failed" };
+            return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed" };
 
         int? statusCode = 200;
         string contentType = "text/html";
