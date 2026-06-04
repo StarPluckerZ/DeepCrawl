@@ -17,14 +17,14 @@ public class DirectHttpFetcher : IDirectHttpFetcher
     public async Task<string> FetchDirectAsync(string url, CancellationToken ct = default)
     {
         _logger.LogDebug("FetchDirect: {Url}", url);
-        var http = _httpClientFactory.CreateClient("Direct");
+        using var http = _httpClientFactory.CreateClient("Direct");
         return await http.GetStringAsync(url, ct);
     }
 
     public async Task<string> FetchWithProxyAsync(string url, CancellationToken ct = default)
     {
         _logger.LogDebug("FetchWithProxy: {Url}", url);
-        var http = _httpClientFactory.CreateClient("ProxyFetcher");
+        using var http = _httpClientFactory.CreateClient("ProxyFetcher");
         return await http.GetStringAsync(url, ct);
     }
 }

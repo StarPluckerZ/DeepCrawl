@@ -38,10 +38,7 @@ public class OpenAICleanStep : ICleanStep
         {
             var output = await _aiCleaner.CleanAsync(input, ct);
             if (string.IsNullOrWhiteSpace(output))
-            {
-                _logger.LogWarning("AI returned empty result for {Url}, falling back to rule-based result", context.Url);
-                return new CleanResult { Output = input, AiCleaned = false };
-            }
+                _logger.LogWarning("AI returned empty result for {Url}", context.Url);
             return new CleanResult { Output = output, AiCleaned = true };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
