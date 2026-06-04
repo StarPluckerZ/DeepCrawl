@@ -29,6 +29,13 @@ def _extract_domain(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+def _block_unnecessary_resources(route):
+    if route.request.resource_type in ("image", "media", "font"):
+        route.abort()
+    else:
+        route.continue_()
+
+
 def _is_http_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -76,6 +83,8 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
             page = await context.new_page()
         else:
             page = await browser.new_page()
+
+        await page.route("**/*", _block_unnecessary_resources)
 
         try:
             response = await page.goto(
