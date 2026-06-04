@@ -154,7 +154,6 @@ public class CrawlPipeline(
                 PromptTokens = cleanResult.TokenUsage.PromptTokens,
                 CompletionTokens = cleanResult.TokenUsage.CompletionTokens,
                 TotalTokens = cleanResult.TokenUsage.TotalTokens,
-                CachedTokens = cleanResult.TokenUsage.CachedTokens,
                 ReasoningTokens = cleanResult.TokenUsage.ReasoningTokens,
                 CacheHitTokens = cleanResult.TokenUsage.CacheHitTokens,
                 CacheMissTokens = cleanResult.TokenUsage.CacheMissTokens,

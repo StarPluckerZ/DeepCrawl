@@ -6,12 +6,11 @@
   <ItemGroup>
     <!-- Web / Extensions -->
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(ExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(ExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="$(ExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="$(ExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(ExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="$(ExtensionsVersion)" />
-
-    <!-- AI -->
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0" />
 
     <!-- Code Analysis -->
     <PackageVersion Include="AngleSharp" Version="1.4.0" />
@@ -27,10 +26,10 @@
 
     <!-- Cache -->
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
-    
+
     <!-- Lock -->
     <PackageVersion Include="DistributedLock.Redis" Version="1.1.1" />
-    
+
     <!-- Logging -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />

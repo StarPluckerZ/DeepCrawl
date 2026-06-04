@@ -2,12 +2,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DeepCrawl.Domain\DeepCrawl.Domain.csproj" />
+    <ProjectReference Include="..\DeepSeekSDK\DeepSeekSDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
     <PackageReference Include="FreeSql.Provider.PostgreSQL" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="ReverseMarkdown" />
     <PackageReference Include="StackExchange.Redis" />

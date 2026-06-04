@@ -3,12 +3,12 @@
   <ItemGroup>
     <ProjectReference Include="..\DeepCrawl.Core\DeepCrawl.Core.csproj" />
     <ProjectReference Include="..\DeepCrawl.Infrastructure\DeepCrawl.Infrastructure.csproj" />
+    <ProjectReference Include="..\DeepSeekSDK\DeepSeekSDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FreeSql.Provider.PostgreSQL" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Console" />

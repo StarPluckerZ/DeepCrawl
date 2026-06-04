@@ -9,10 +9,10 @@ using DeepCrawl.Infrastructure.Auth;
 using DeepCrawl.Infrastructure.Cleaning;
 using DeepCrawl.Infrastructure.Caching;
 using DeepCrawl.Infrastructure.Clients;
+using DeepSeekSDK;
 using FreeSql;
 using FreeSql.DataAnnotations;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.AI;
 using Polly;
 using Polly.Extensions.Http;
 using Scalar.AspNetCore;
@@ -134,11 +134,7 @@ builder.Services.AddSingleton(new AIMarkdownCleanerOptions
     ThinkingLevel = thinkingLevel
 });
 
-var openAiClient = new OpenAI.OpenAIClient(
-    new System.ClientModel.ApiKeyCredential(apiKey),
-    new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) });
-builder.Services.AddSingleton(openAiClient);
-builder.Services.AddSingleton<IChatClient>(openAiClient.GetChatClient(model).AsIChatClient());
+builder.Services.AddDeepSeekClient(apiKey, endpoint);
 
 builder.Services.AddSingleton<IContentAnalyzer, ContentAnalyzer>();
 builder.Services.AddSingleton<IHtmlCleaner, AngleSharpHtmlCleaner>();

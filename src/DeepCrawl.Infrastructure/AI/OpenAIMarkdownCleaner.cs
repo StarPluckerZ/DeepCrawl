@@ -1,25 +1,21 @@
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Models;
+using DeepSeekSDK;
+using Microsoft.Extensions.Logging;
 
 namespace DeepCrawl.Infrastructure.AI;
 
 public class AIMarkdownCleanerOptions
 {
-    public string BaseUrl { get; set; } = "https://api.siliconflow.cn/v1/chat/completions";
+    public string BaseUrl { get; set; } = "https://api.deepseek.com";
     public string ApiKey { get; set; } = "";
-    public string Model { get; set; } = "Qwen/Qwen3-8B";
+    public string Model { get; set; } = "deepseek-v4-flash";
     public string? ThinkingLevel { get; set; }
 }
 
-public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
+public class OpenAIMarkdownCleaner(DeepSeekClient client, ILogger<OpenAIMarkdownCleaner> logger, AIMarkdownCleanerOptions options)
+    : IAIMarkdownCleaner
 {
-    private readonly IChatClient _chatClient;
-    private readonly ILogger<OpenAIMarkdownCleaner> _logger;
-    private readonly string? _thinkingLevel;
-    private readonly string _model;
-
     private const string SystemPrompt = """
         你是网页内容清洗助手。接收网页 Markdown，只输出正文内容。
         ## 移除规则
@@ -34,7 +30,7 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
         6. **广告推广**：广告标记、赞助内容、推广链接、"热门推荐"、"大家都在搜"
         7. **页脚杂项**：版权声明、联系方式、条款链接、Cookie提示、备案信息、友站链接
         8. **无关图片**：无关、非正文的图片内容及正文中的装饰图片链接
-        9. **无关推荐**: 无关正文的推荐内容，例如"热榜"、"热搜"、"相关推荐"、“阅读下一个”等
+        9. **无关推荐**: 无关正文的推荐内容，例如"热榜"、"热搜"、"相关推荐"、"阅读下一个"等
         10. **友联链接**：无关正文的网站链接
         
         ## 保留原则
@@ -50,14 +46,6 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
         - 多篇内容之间用 --- 分隔
         """;
 
-    public OpenAIMarkdownCleaner(IChatClient chatClient, ILogger<OpenAIMarkdownCleaner> logger, AIMarkdownCleanerOptions options)
-    {
-        _chatClient = chatClient;
-        _logger = logger;
-        _thinkingLevel = options.ThinkingLevel;
-        _model = options.Model;
-    }
-
     public async Task<(string Text, AiTokenUsage? Usage)> CleanAsync(string rawMarkdown, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(rawMarkdown))
@@ -65,58 +53,47 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
 
         try
         {
-            var messages = new List<ChatMessage>
+            var request = new ChatCompletionRequest
             {
-                new(ChatRole.System, SystemPrompt),
-                new(ChatRole.User, rawMarkdown)
+                Model = options.Model,
+                Messages =
+                [
+                    ChatMessage.System(SystemPrompt),
+                    ChatMessage.User(rawMarkdown)
+                ],
+                Temperature = 0,
             };
 
-            var options = new ChatOptions { Temperature = 0 };
+            if (options.ThinkingLevel is { Length: > 0 } && options.ThinkingLevel != "none")
+                request.Thinking = new ThinkingOptions { Type = "enabled" };
 
-            if (_thinkingLevel is { Length: > 0 } && _thinkingLevel != "none")
-            {
-                options.AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    ["thinking"] = new { type = "enabled" },
-                    ["reasoning_effort"] = _thinkingLevel
-                };
-            }
-
-            var response = await _chatClient.GetResponseAsync(messages, options, ct);
-            var output = (response.Text ?? string.Empty).Trim();
+            var response = await client.ChatAsync(request, ct);
+            var output = (response.GetContent() ?? string.Empty).Trim();
 
             AiTokenUsage? tokenUsage = null;
             if (response.Usage is { } u)
             {
                 tokenUsage = new AiTokenUsage
                 {
-                    Model = _model,
-                    PromptTokens = (int?)u.InputTokenCount,
-                    CompletionTokens = (int?)u.OutputTokenCount,
-                    TotalTokens = TryGetInt(u.AdditionalCounts, "total_tokens"),
-                    CachedTokens = TryGetInt(u.AdditionalCounts, "cached_tokens"),
-                    ReasoningTokens = TryGetInt(u.AdditionalCounts, "reasoning_tokens"),
-                    CacheHitTokens = TryGetInt(u.AdditionalCounts, "prompt_cache_hit_tokens"),
-                    CacheMissTokens = TryGetInt(u.AdditionalCounts, "prompt_cache_miss_tokens"),
+                    Model = options.Model,
+                    PromptTokens = u.PromptTokens,
+                    CompletionTokens = u.CompletionTokens,
+                    TotalTokens = u.TotalTokens,
+                    ReasoningTokens = u.CompletionTokensDetails?.ReasoningTokens,
+                    CacheHitTokens = u.PromptCacheHitTokens,
+                    CacheMissTokens = u.PromptCacheMissTokens,
                 };
             }
 
-            _logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars, {Tokens} tokens",
-                rawMarkdown.Length, output.Length, tokenUsage?.TotalTokens);
+            logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars, {Prompt}/{Completion}/{Total} tokens",
+                rawMarkdown.Length, output.Length, tokenUsage?.PromptTokens, tokenUsage?.CompletionTokens, tokenUsage?.TotalTokens);
 
             return (output, tokenUsage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "AI cleaning failed, returning raw markdown");
+            logger.LogWarning(ex, "AI cleaning failed, returning raw markdown");
             return (rawMarkdown, null);
         }
-    }
-
-    private static int? TryGetInt(AdditionalPropertiesDictionary<long>? dict, string key)
-    {
-        if (dict is not null && dict.TryGetValue(key, out var val))
-            return (int)val;
-        return null;
     }
 }
