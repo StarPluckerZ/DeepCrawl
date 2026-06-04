@@ -16,6 +16,7 @@ public class CrawlPipeline(
     IRedisClient redisClient,
     TieredHttpFetcher tieredFetcher,
     CrawlConfig crawlConfig,
+    IBaseRepository<CrawlStatistic> crawlStatisticRepo,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private CacheKey GetCacheKey(string contextHash) => new CacheKey("Crawl", contextHash, TimeSpan.FromHours(1));
@@ -105,6 +106,7 @@ public class CrawlPipeline(
         var existing = await crawlRecordRepo
             .Where(c => c.Url == request.Url)
             .FirstAsync(ct);
+        long recordId;
         if (existing is not null)
         {
             existing.FetchTier = tier;
@@ -120,6 +122,7 @@ public class CrawlPipeline(
             existing.CompletedAt = DateTime.Now;
             existing.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(existing, ct);
+            recordId = existing.Id;
         }
         else
         {
@@ -140,6 +143,24 @@ public class CrawlPipeline(
                 LastAccessedAt = DateTime.Now
             };
             await crawlRecordRepo.InsertAsync(record, ct);
+            recordId = record.Id;
+        }
+
+        if (cleanResult.AiCleaned && cleanResult.TokenUsage is not null)
+        {
+            await crawlStatisticRepo.InsertAsync(new CrawlStatistic
+            {
+                CrawlRecordId = recordId,
+                PromptTokens = cleanResult.TokenUsage.PromptTokens,
+                CompletionTokens = cleanResult.TokenUsage.CompletionTokens,
+                TotalTokens = cleanResult.TokenUsage.TotalTokens,
+                CachedTokens = cleanResult.TokenUsage.CachedTokens,
+                ReasoningTokens = cleanResult.TokenUsage.ReasoningTokens,
+                CacheHitTokens = cleanResult.TokenUsage.CacheHitTokens,
+                CacheMissTokens = cleanResult.TokenUsage.CacheMissTokens,
+                Model = cleanResult.TokenUsage.Model,
+                CreatedAt = DateTime.Now
+            }, ct);
         }
 
         var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);

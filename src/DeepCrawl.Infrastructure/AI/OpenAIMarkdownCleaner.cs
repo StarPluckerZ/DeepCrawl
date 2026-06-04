@@ -1,7 +1,7 @@
-using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using DeepCrawl.Domain.Abstractions;
+using DeepCrawl.Domain.Models;
 
 namespace DeepCrawl.Infrastructure.AI;
 
@@ -18,6 +18,7 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
     private readonly IChatClient _chatClient;
     private readonly ILogger<OpenAIMarkdownCleaner> _logger;
     private readonly string? _thinkingLevel;
+    private readonly string _model;
 
     private const string SystemPrompt = """
         你是网页内容清洗助手。接收网页 Markdown，只输出正文内容。
@@ -54,12 +55,13 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
         _chatClient = chatClient;
         _logger = logger;
         _thinkingLevel = options.ThinkingLevel;
+        _model = options.Model;
     }
 
-    public async Task<string> CleanAsync(string rawMarkdown, CancellationToken ct = default)
+    public async Task<(string Text, AiTokenUsage? Usage)> CleanAsync(string rawMarkdown, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(rawMarkdown))
-            return string.Empty;
+            return (string.Empty, null);
 
         try
         {
@@ -80,31 +82,41 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
                 };
             }
 
-            var sb = new StringBuilder();
-            var reasoningSb = new StringBuilder();
-            await foreach (var update in _chatClient.GetStreamingResponseAsync(messages, options, ct))
-            {
-                foreach (var content in update.Contents)
-                {
-                    if (content is TextReasoningContent trc && !string.IsNullOrEmpty(trc.Text))
-                        reasoningSb.Append(trc.Text);
+            var response = await _chatClient.GetResponseAsync(messages, options, ct);
+            var output = (response.Text ?? string.Empty).Trim();
 
-                    if (content is TextContent tc && !string.IsNullOrEmpty(tc.Text))
-                        sb.Append(tc.Text);
-                }
+            AiTokenUsage? tokenUsage = null;
+            if (response.Usage is { } u)
+            {
+                tokenUsage = new AiTokenUsage
+                {
+                    Model = _model,
+                    PromptTokens = (int?)u.InputTokenCount,
+                    CompletionTokens = (int?)u.OutputTokenCount,
+                    TotalTokens = TryGetInt(u.AdditionalCounts, "total_tokens"),
+                    CachedTokens = TryGetInt(u.AdditionalCounts, "cached_tokens"),
+                    ReasoningTokens = TryGetInt(u.AdditionalCounts, "reasoning_tokens"),
+                    CacheHitTokens = TryGetInt(u.AdditionalCounts, "prompt_cache_hit_tokens"),
+                    CacheMissTokens = TryGetInt(u.AdditionalCounts, "prompt_cache_miss_tokens"),
+                };
             }
 
-            if (reasoningSb.Length > 0)
-                _logger.LogDebug("AI reasoning: {Text}", reasoningSb.ToString());
+            _logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars, {Tokens} tokens",
+                rawMarkdown.Length, output.Length, tokenUsage?.TotalTokens);
 
-            var cleaned = sb.ToString().Trim();
-            _logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars", rawMarkdown.Length, cleaned.Length);
-            return cleaned;
+            return (output, tokenUsage);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "AI cleaning failed, returning raw markdown");
-            return rawMarkdown;
+            return (rawMarkdown, null);
         }
+    }
+
+    private static int? TryGetInt(AdditionalPropertiesDictionary<long>? dict, string key)
+    {
+        if (dict is not null && dict.TryGetValue(key, out var val))
+            return (int)val;
+        return null;
     }
 }

@@ -49,5 +49,8 @@ public class CrawlRecord
     public DateTime? CompletedAt { get; set; }
     
     public DateTime LastAccessedAt { get; set; }
+
+    [Navigate(nameof(CrawlStatistic.CrawlRecordId))]
+    public List<CrawlStatistic> Statistics { get; set; } = [];
 }
 
