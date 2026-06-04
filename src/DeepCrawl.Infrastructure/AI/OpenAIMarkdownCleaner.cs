@@ -95,7 +95,7 @@ public class OpenAIMarkdownCleaner : IAIMarkdownCleaner
             }
 
             if (reasoningSb.Length > 0)
-                _logger.LogInformation("AI reasoning: {Text}", reasoningSb.ToString());
+                _logger.LogDebug("AI reasoning: {Text}", reasoningSb.ToString());
 
             var cleaned = sb.ToString().Trim();
             _logger.LogInformation("AI cleaning: {InputLen} -> {OutputLen} chars", rawMarkdown.Length, cleaned.Length);

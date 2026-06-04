@@ -53,11 +53,22 @@ public class CrawlPipeline(
             return cached;
         }
 
-        var (success, rawHtml, fetchError) = await tieredFetcher.FetchAsync(
+        var (success, tier, rawHtml, fetchError) = await tieredFetcher.FetchAsync(
             request.Url, request.WaitUntil, ct);
 
         if (!success)
+        {
+            await crawlRecordRepo.InsertAsync(new CrawlRecord
+            {
+                Url = request.Url,
+                Status = CrawlStatus.Failed,
+                FetchTier = tier,
+                ErrorMessage = fetchError ?? "All fetch tiers failed",
+                CompletedAt = DateTime.Now,
+                LastAccessedAt = DateTime.Now
+            }, ct);
             return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed" };
+        }
 
         int? statusCode = 200;
         string contentType = "text/html";
@@ -69,6 +80,7 @@ public class CrawlPipeline(
             .FirstAsync(ct);
         if (sameHash is not null)
         {
+            sameHash.FetchTier = tier;
             sameHash.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
             logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
@@ -95,6 +107,7 @@ public class CrawlPipeline(
             .FirstAsync(ct);
         if (existing is not null)
         {
+            existing.FetchTier = tier;
             existing.HtmlHash = htmlHash;
             existing.ContextHash = contextHash;
             existing.MarkdownContent = cleanResult.Output;
@@ -122,6 +135,7 @@ public class CrawlPipeline(
                     ? JsonSerializer.Serialize(cleanResult.Metadata)
                     : null,
                 Status = CrawlStatus.Completed,
+                FetchTier = tier,
                 CompletedAt = DateTime.Now,
                 LastAccessedAt = DateTime.Now
             };

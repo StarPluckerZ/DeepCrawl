@@ -39,6 +39,9 @@ public class CrawlRecord
     [Column(StringLength = 1024)]
     public string? ErrorMessage { get; set; }
 
+    [Column(StringLength = 32, IsNullable = true, MapType = typeof(string))]
+    public FetchTier? FetchTier { get; set; }
+
     [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
     public DateTime CreatedAt { get; set; } 
     
