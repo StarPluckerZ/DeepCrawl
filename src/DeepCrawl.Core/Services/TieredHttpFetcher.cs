@@ -19,6 +19,7 @@ public class TieredHttpFetcher(
         var proxyUrl = crawlConfig.ProxyUrl;
         string? html = null;
         var success = false;
+        var jsSkeleton = false;
         var tier = FetchTier.HttpClient;
         string? lastError = null;
 
@@ -29,7 +30,10 @@ public class TieredHttpFetcher(
             if (contentAnalyzer.GetTextLength(html) >= crawlConfig.MinTextLength)
                 success = true;
             else
-                logger.LogWarning("Tier 1 (HttpClient) got JS skeleton for {Url}, falling back", url);
+            {
+                jsSkeleton = true;
+                logger.LogWarning("Tier 1 (HttpClient) got JS skeleton for {Url}, falling to browser", url);
+            }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -41,7 +45,7 @@ public class TieredHttpFetcher(
         }
 
         // Tier 2: HttpClient + proxy
-        if (!success && proxyConfigured)
+        if (!success && proxyConfigured && !jsSkeleton)
         {
             tier = FetchTier.HttpClientProxy;
             try
