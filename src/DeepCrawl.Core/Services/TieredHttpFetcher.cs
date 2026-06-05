@@ -12,6 +12,8 @@ public class TieredHttpFetcher(
     CrawlConfig crawlConfig,
     ILogger<TieredHttpFetcher> logger)
 {
+    private const int DEFAULT_TIMEOUT_SECONDS = 30;
+
     public async Task<(bool Success, FetchTier Tier, string? Html, string? Error)> FetchAsync(
         string url, string? waitUntil, CancellationToken ct)
     {
@@ -20,6 +22,7 @@ public class TieredHttpFetcher(
         string? html = null;
         var success = false;
         var jsSkeleton = false;
+        var tier1NetworkOk = false;
         var tier = FetchTier.HttpClient;
         string? lastError = null;
 
@@ -27,6 +30,7 @@ public class TieredHttpFetcher(
         try
         {
             html = await directFetcher.FetchDirectAsync(url, ct);
+            tier1NetworkOk = true;
             if (contentAnalyzer.GetTextLength(html) >= crawlConfig.MinTextLength)
                 success = true;
             else
@@ -54,7 +58,10 @@ public class TieredHttpFetcher(
                 if (contentAnalyzer.GetTextLength(html) >= crawlConfig.MinTextLength)
                     success = true;
                 else
-                    logger.LogWarning("Tier 2 (HttpClient+proxy) got JS skeleton for {Url}, falling back", url);
+                {
+                    jsSkeleton = true;
+                    logger.LogWarning("Tier 2 (HttpClient+proxy) got JS skeleton for {Url}, falling to browser", url);
+                }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -67,14 +74,22 @@ public class TieredHttpFetcher(
         }
 
         // Tier 3: Cloak browser
-        if (!success)
+        var skipTier3 = jsSkeleton && !tier1NetworkOk && proxyConfigured;
+        if (!success && !skipTier3)
         {
             tier = FetchTier.CloakBrowser;
+            var t3Timeout = jsSkeleton ? 15 : DEFAULT_TIMEOUT_SECONDS;
+            using var t3cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            t3cts.CancelAfter(TimeSpan.FromSeconds(t3Timeout));
             try
             {
-                html = await cloakClient.FetchHtmlAsync(url, waitUntil, null, ct);
+                html = await cloakClient.FetchHtmlAsync(url, waitUntil, null, t3cts.Token);
                 if (!string.IsNullOrWhiteSpace(html))
                     success = true;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning("Tier 3 (Cloak) timed out after {Timeout}s for {Url}", t3Timeout, url);
             }
             catch (CloakBrowserException ex)
             {
