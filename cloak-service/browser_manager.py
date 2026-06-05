@@ -114,12 +114,11 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
             if response is not None and response.status in (403, 406):
                 raise BotBlockedError(f"Target site returned {response.status}")
 
-            logger.info("goto done, wait_strategy=%s custom_wait=%s", wait_strategy, custom_wait_ms)
             if custom_wait_ms:
                 await page.wait_for_timeout(custom_wait_ms)
             elif not wait_strategy:
                 await page.wait_for_timeout(EXTRA_WAIT_MS)
-                await _wait_for_content(page)
+            await _wait_for_content(page)
 
         except (BotBlockedError, InvalidUrlError):
             raise
