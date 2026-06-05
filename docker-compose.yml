@@ -41,6 +41,7 @@ services:
       CLOAKBROWSER_EXTRA_WAIT_MS: "2000"
       CLOAKBROWSER_CONTENT_WAIT_MS: "15000"
       CLOAKBROWSER_CONTENT_INTERVAL_MS: "500"
+      CLOAKBROWSER_STABLE_COUNT: "5"
     volumes:
       - cloakdata:/root/.cloakbrowser
 

@@ -16,6 +16,7 @@ MAX_BROWSERS = int(os.getenv("CLOAKBROWSER_MAX_BROWSERS", str(MAX_CONCURRENT)))
 EXTRA_WAIT_MS = int(os.getenv("CLOAKBROWSER_EXTRA_WAIT_MS", "2000"))
 CONTENT_WAIT_MS = int(os.getenv("CLOAKBROWSER_CONTENT_WAIT_MS", "15000"))
 CONTENT_INTERVAL_MS = int(os.getenv("CLOAKBROWSER_CONTENT_INTERVAL_MS", "500"))
+STABLE_COUNT = int(os.getenv("CLOAKBROWSER_STABLE_COUNT", "5"))
 
 VALID_WAIT_UNTIL = {"load", "networkidle", "domcontentloaded", "commit"}
 
@@ -41,28 +42,19 @@ def _is_http_url(url: str) -> bool:
         return False
 
 
-_IS_CONTENT_RENDERED = """() => {
-  const b = document.body;
-  if (!b) return false;
-  const t = b.innerText;
-  if (t.startsWith('You need to enable JavaScript') || t.includes('Please enable JavaScript'))
-    return false;
-  for (const r of b.querySelectorAll('#root, #app, #__next, #__nuxt')) {
-    if (!r.innerText.trim()) return false;
-  }
-  if (b.querySelectorAll('p,h1,h2,h3,h4,h5,h6,article,main,section,li,td,th').length === 0)
-    return false;
-  const c = b.cloneNode(true);
-  c.querySelectorAll('script, style, noscript').forEach(e => e.remove());
-  return c.innerText.trim().length >= 200;
-}"""
-
-
 async def _wait_for_content(page):
     start = time.monotonic()
+    stable = 0
+    last_len = 0
     while True:
-        if await page.evaluate(_IS_CONTENT_RENDERED):
-            return
+        cur = await page.evaluate("() => document.body.innerText.length")
+        if cur > 0 and cur == last_len:
+            stable += 1
+            if stable >= STABLE_COUNT:
+                return
+        else:
+            stable = 0
+        last_len = cur
         if (time.monotonic() - start) * 1000 >= CONTENT_WAIT_MS:
             break
         await page.wait_for_timeout(CONTENT_INTERVAL_MS)
