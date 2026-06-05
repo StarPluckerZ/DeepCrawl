@@ -80,7 +80,7 @@ async def get_browser(seed: str, proxy: str | None = None):
             await evict_browser.close()
             logger.info("Evicted browser %s (max_browsers=%d)", evict_key, MAX_BROWSERS)
 
-        kwargs = dict(humanize=True, geoip=True, headless=False,
+        kwargs = dict(humanize=True, geoip=True,
                       args=[f"--fingerprint={seed}", "--blink-settings=imagesEnabled=false"])
         if proxy:
             kwargs["proxy"] = proxy
