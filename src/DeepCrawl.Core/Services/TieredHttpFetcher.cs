@@ -22,7 +22,6 @@ public class TieredHttpFetcher(
         string? html = null;
         var success = false;
         var jsSkeleton = false;
-        var tier1NetworkOk = false;
         var tier = FetchTier.HttpClient;
         string? lastError = null;
 
@@ -30,7 +29,6 @@ public class TieredHttpFetcher(
         try
         {
             html = await directFetcher.FetchDirectAsync(url, ct);
-            tier1NetworkOk = true;
             if (contentAnalyzer.GetTextLength(html) >= crawlConfig.MinTextLength)
                 success = true;
             else
@@ -74,16 +72,17 @@ public class TieredHttpFetcher(
         }
 
         // Tier 3: Cloak browser
-        var skipTier3 = jsSkeleton && !tier1NetworkOk && proxyConfigured;
+        var skipTier3 = jsSkeleton && proxyConfigured;
         if (!success && !skipTier3)
         {
             tier = FetchTier.CloakBrowser;
             var t3Timeout = jsSkeleton ? 15 : DEFAULT_TIMEOUT_SECONDS;
+            var t3Wait = (jsSkeleton && !proxyConfigured) ? "networkidle" : waitUntil;
             using var t3cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             t3cts.CancelAfter(TimeSpan.FromSeconds(t3Timeout));
             try
             {
-                html = await cloakClient.FetchHtmlAsync(url, waitUntil, null, t3cts.Token);
+                html = await cloakClient.FetchHtmlAsync(url, t3Wait, null, t3cts.Token);
                 if (!string.IsNullOrWhiteSpace(html))
                     success = true;
             }
