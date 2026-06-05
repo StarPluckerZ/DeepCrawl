@@ -33,11 +33,11 @@ def _extract_domain(url: str) -> str:
 _UNNECESSARY_TYPES = ("image", "media", "font", "websocket", "eventsource", "ping")
 
 
-def _block_unnecessary_resources(route):
+async def _block_unnecessary_resources(route):
     if route.request.resource_type in _UNNECESSARY_TYPES:
-        route.abort()
+        await route.abort()
     else:
-        route.continue_()
+        await route.continue_()
 
 
 def _is_http_url(url: str) -> bool:
