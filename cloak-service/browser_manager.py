@@ -33,16 +33,6 @@ def _extract_domain(url: str) -> str:
     return urlparse(url).hostname or url
 
 
-_UNNECESSARY_TYPES = ("image", "media", "font")
-
-
-async def _block_unnecessary_resources(route):
-    if route.request.resource_type in _UNNECESSARY_TYPES:
-        await route.abort()
-    else:
-        await route.continue_()
-
-
 def _is_http_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -78,23 +68,25 @@ async def _wait_for_content(page):
         await page.wait_for_timeout(CONTENT_INTERVAL_MS)
 
 
-async def get_browser(seed: str):
+async def get_browser(seed: str, proxy: str | None = None):
+    key = f"{seed}:proxy" if proxy else seed
     async with _browsers_lock:
-        if seed in _browsers:
-            _browsers.move_to_end(seed)
-            return _browsers[seed]
+        if key in _browsers:
+            _browsers.move_to_end(key)
+            return _browsers[key]
 
         while len(_browsers) >= MAX_BROWSERS:
-            evict_seed, evict_browser = _browsers.popitem(last=False)
+            evict_key, evict_browser = _browsers.popitem(last=False)
             await evict_browser.close()
-            logger.info("Evicted browser for fingerprint seed %s (max_browsers=%d)", evict_seed, MAX_BROWSERS)
+            logger.info("Evicted browser %s (max_browsers=%d)", evict_key, MAX_BROWSERS)
 
-        browser = await launch_async(
-            humanize=True,
-            args=[f"--fingerprint={seed}"],
-        )
-        _browsers[seed] = browser
-        logger.info("CloakBrowser launched (fingerprint=%s, active_browsers=%d)", seed, len(_browsers))
+        kwargs = dict(humanize=True, geoip=True, headless=False,
+                      args=[f"--fingerprint={seed}", "--blink-settings=imagesEnabled=false"])
+        if proxy:
+            kwargs["proxy"] = proxy
+        browser = await launch_async(**kwargs)
+        _browsers[key] = browser
+        logger.info("CloakBrowser launched (key=%s, active_browsers=%d)", key, len(_browsers))
         return browser
 
 
@@ -104,21 +96,14 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
 
     domain = _extract_domain(url)
     seed = _compute_seed(domain)
-    browser = await get_browser(seed)
+    browser = await get_browser(seed, proxy)
 
     wait_strategy = _resolve_wait_until(wait_until)
     custom_wait_ms = _parse_wait_ms(wait_until)
 
-    context = None
     page = None
     try:
-        if proxy:
-            context = await browser.new_context(proxy={"server": proxy})
-            page = await context.new_page()
-        else:
-            page = await browser.new_page()
-
-        await page.route("**/*", _block_unnecessary_resources)
+        page = await browser.new_page()
 
         try:
             response = await page.goto(
@@ -152,8 +137,6 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
     finally:
         if page:
             await page.close()
-        if context:
-            await context.close()
 
 
 def _resolve_wait_until(value: str | None) -> str | None:
