@@ -30,7 +30,7 @@ def _extract_domain(url: str) -> str:
     return urlparse(url).hostname or url
 
 
-_UNNECESSARY_TYPES = ("image", "media", "font", "websocket", "eventsource", "ping")
+_UNNECESSARY_TYPES = ("image", "media", "font")
 
 
 async def _block_unnecessary_resources(route):
