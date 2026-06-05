@@ -15,7 +15,7 @@ DEFAULT_TIMEOUT_MS = int(os.getenv("CLOAKBROWSER_TIMEOUT_MS", "30000"))
 MAX_BROWSERS = int(os.getenv("CLOAKBROWSER_MAX_BROWSERS", str(MAX_CONCURRENT)))
 EXTRA_WAIT_MS = int(os.getenv("CLOAKBROWSER_EXTRA_WAIT_MS", "2000"))
 CONTENT_WAIT_MS = int(os.getenv("CLOAKBROWSER_CONTENT_WAIT_MS", "15000"))
-CONTENT_INTERVAL_MS = int(os.getenv("CLOAKBROWSER_CONTENT_INTERVAL_MS", "500"))
+CONTENT_INTERVAL_MS = int(os.getenv("CLOAKBROWSER_CONTENT_INTERVAL_MS", "1000"))
 STABLE_COUNT = int(os.getenv("CLOAKBROWSER_STABLE_COUNT", "5"))
 
 VALID_WAIT_UNTIL = {"load", "networkidle", "domcontentloaded", "commit"}
@@ -45,13 +45,16 @@ def _is_http_url(url: str) -> bool:
 async def _wait_for_content(page):
     start = time.monotonic()
     stable = 0
-    max_len = 0
+    max_text = 0
+    max_nodes = 0
     while True:
-        cur = await page.evaluate("() => document.body.innerText.length")
-        if cur > max_len:
-            max_len = cur
+        text = await page.evaluate("() => document.body.innerText.length")
+        nodes = await page.evaluate("() => document.querySelectorAll('*').length")
+        if text > max_text or nodes > max_nodes:
+            max_text = max(max_text, text)
+            max_nodes = max(max_nodes, nodes)
             stable = 0
-        elif cur > 0:
+        elif text > 0:
             stable += 1
             if stable >= STABLE_COUNT:
                 return
