@@ -19,7 +19,21 @@ public class CrawlPipeline(
     IBaseRepository<CrawlStatistic> crawlStatisticRepo,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
-    private CacheKey GetCacheKey(string contextHash) => new CacheKey("Crawl", contextHash, TimeSpan.FromHours(1));
+    private static readonly Random TtlRandom = new();
+    private const int MaxStabilityN = 5;
+
+    private CacheKey GetCacheKey(string contextHash, TimeSpan ttl)
+        => new CacheKey("Crawl", contextHash, ttl);
+
+    private TimeSpan ComputeTtl(int n)
+    {
+        n = Math.Min(n, MaxStabilityN);
+        var raw = Math.Min(crawlConfig.CacheBaseMinutes * Math.Pow(2, n), crawlConfig.CacheMaxMinutes);
+        var factor = 0.85 + TtlRandom.NextDouble() * 0.30;
+        return TimeSpan.FromMinutes(raw * factor);
+    }
+
+    private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(1);
     
     public async Task<ScrapeResponse> ScrapeAsync(ScrapeRequest request, CancellationToken ct = default)
     {
@@ -36,7 +50,7 @@ public class CrawlPipeline(
 
         var contextHash = context.ComputeContextHash();
 
-        var cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash), ct);
+        var cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash, DefaultTtl), ct);
         if (cached is not null)
         {
             logger.LogInformation("Redis cache hit for {Url}", request.Url);
@@ -47,7 +61,7 @@ public class CrawlPipeline(
             .GetLock($"Crawl:{request.Url}")
             .AcquireAsync(TimeSpan.FromSeconds(60), ct);
         // double check
-        cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash), ct);
+        cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash, DefaultTtl), ct);
         if (cached is not null)
         {
             logger.LogInformation("Redis cache hit after lock for {Url}", request.Url);
@@ -82,6 +96,7 @@ public class CrawlPipeline(
         if (sameHash is not null)
         {
             sameHash.FetchTier = tier;
+            sameHash.StabilityCount++;
             sameHash.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
             logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
@@ -95,7 +110,7 @@ public class CrawlPipeline(
                 : null;
 
             var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType);
-            await redisClient.SetAsync(GetCacheKey(contextHash), cacheResponse, ct);
+            await redisClient.SetAsync(GetCacheKey(contextHash, ComputeTtl(sameHash.StabilityCount)), cacheResponse, ct);
             return cacheResponse;
         }
 
@@ -110,6 +125,7 @@ public class CrawlPipeline(
         if (existing is not null)
         {
             existing.FetchTier = tier;
+            existing.StabilityCount = 1;
             existing.HtmlHash = htmlHash;
             existing.ContextHash = contextHash;
             existing.MarkdownContent = cleanResult.Output;
@@ -139,6 +155,7 @@ public class CrawlPipeline(
                     : null,
                 Status = CrawlStatus.Completed,
                 FetchTier = tier,
+                StabilityCount = 1,
                 CompletedAt = DateTime.Now,
                 LastAccessedAt = DateTime.Now
             };
@@ -163,7 +180,8 @@ public class CrawlPipeline(
         }
 
         var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
-        await redisClient.SetAsync(GetCacheKey(contextHash), response, ct);
+        var finalTtl = ComputeTtl(existing?.StabilityCount ?? 1);
+        await redisClient.SetAsync(GetCacheKey(contextHash, finalTtl), response, ct);
         return response;
     }
 

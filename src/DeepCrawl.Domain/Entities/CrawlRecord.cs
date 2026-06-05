@@ -42,6 +42,8 @@ public class CrawlRecord
     [Column(StringLength = 32, IsNullable = true, MapType = typeof(string))]
     public FetchTier? FetchTier { get; set; }
 
+    public int StabilityCount { get; set; }
+
     [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
     public DateTime CreatedAt { get; set; } 
     
