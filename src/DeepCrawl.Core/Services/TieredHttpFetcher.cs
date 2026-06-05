@@ -22,6 +22,7 @@ public class TieredHttpFetcher(
         string? html = null;
         var success = false;
         var jsSkeleton = false;
+        var tier1NetworkOk = false;
         var tier = FetchTier.HttpClient;
         string? lastError = null;
 
@@ -29,6 +30,7 @@ public class TieredHttpFetcher(
         try
         {
             html = await directFetcher.FetchDirectAsync(url, ct);
+            tier1NetworkOk = true;
             if (contentAnalyzer.GetTextLength(html) >= crawlConfig.MinTextLength)
                 success = true;
             else
@@ -72,7 +74,7 @@ public class TieredHttpFetcher(
         }
 
         // Tier 3: Cloak browser
-        var skipTier3 = jsSkeleton && proxyConfigured;
+        var skipTier3 = jsSkeleton && !tier1NetworkOk && proxyConfigured;
         if (!success && !skipTier3)
         {
             tier = FetchTier.CloakBrowser;
