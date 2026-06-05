@@ -45,16 +45,16 @@ def _is_http_url(url: str) -> bool:
 async def _wait_for_content(page):
     start = time.monotonic()
     stable = 0
-    last_len = 0
+    max_len = 0
     while True:
         cur = await page.evaluate("() => document.body.innerText.length")
-        if cur > 0 and cur == last_len:
+        if cur > max_len:
+            max_len = cur
+            stable = 0
+        elif cur > 0:
             stable += 1
             if stable >= STABLE_COUNT:
                 return
-        else:
-            stable = 0
-        last_len = cur
         if (time.monotonic() - start) * 1000 >= CONTENT_WAIT_MS:
             break
         await page.wait_for_timeout(CONTENT_INTERVAL_MS)
