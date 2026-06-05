@@ -104,7 +104,7 @@ public class TieredHttpFetcher(
             tier = FetchTier.CloakBrowserProxy;
             try
             {
-                html = await cloakClient.FetchHtmlAsync(url, waitUntil, proxyUrl, ct);
+                html = await cloakClient.FetchHtmlAsync(url, "networkidle", proxyUrl, ct);
                 if (!string.IsNullOrWhiteSpace(html))
                     success = true;
             }
