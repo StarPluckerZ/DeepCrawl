@@ -51,14 +51,18 @@ async def _wait_for_content(page):
         text = await page.evaluate("() => document.body.innerText.length")
         nodes = await page.evaluate("() => document.querySelectorAll('*').length")
         if text > max_text or nodes > max_nodes:
+            logger.debug("Content growing: text %d->%d, nodes %d->%d", max_text, text, max_nodes, nodes)
             max_text = max(max_text, text)
             max_nodes = max(max_nodes, nodes)
             stable = 0
         elif text > 0:
             stable += 1
             if stable >= STABLE_COUNT:
+                logger.info("Content stable after %d checks: text=%d, nodes=%d", STABLE_COUNT, text, nodes)
                 return
-        if (time.monotonic() - start) * 1000 >= CONTENT_WAIT_MS:
+        elapsed = (time.monotonic() - start) * 1000
+        if elapsed >= CONTENT_WAIT_MS:
+            logger.warning("Content wait timeout after %.1fs: text=%d, nodes=%d", elapsed / 1000, text, nodes)
             break
         await page.wait_for_timeout(CONTENT_INTERVAL_MS)
 
@@ -125,6 +129,10 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
 
         try:
             content = await page.content()
+            logger.info("Page fetched: %d bytes, innerText=%d chars, nodes=%d",
+                       len(content),
+                       await page.evaluate("() => document.body.innerText.length"),
+                       await page.evaluate("() => document.querySelectorAll('*').length"))
         except Exception as e:
             raise FetchFailedError(f"Failed to get page content: {e}")
 
