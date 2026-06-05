@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import time
 from collections import OrderedDict
 from urllib.parse import urlparse
 
@@ -13,6 +14,8 @@ MAX_CONCURRENT = int(os.getenv("CLOAKBROWSER_MAX_CONCURRENT", "3"))
 DEFAULT_TIMEOUT_MS = int(os.getenv("CLOAKBROWSER_TIMEOUT_MS", "30000"))
 MAX_BROWSERS = int(os.getenv("CLOAKBROWSER_MAX_BROWSERS", str(MAX_CONCURRENT)))
 EXTRA_WAIT_MS = int(os.getenv("CLOAKBROWSER_EXTRA_WAIT_MS", "2000"))
+CONTENT_WAIT_MS = int(os.getenv("CLOAKBROWSER_CONTENT_WAIT_MS", "15000"))
+CONTENT_INTERVAL_MS = int(os.getenv("CLOAKBROWSER_CONTENT_INTERVAL_MS", "500"))
 
 VALID_WAIT_UNTIL = {"load", "networkidle", "domcontentloaded", "commit"}
 
@@ -48,7 +51,31 @@ def _is_http_url(url: str) -> bool:
         return False
 
 
-async def get_browser(seed: str):
+_IS_CONTENT_RENDERED = """() => {
+  const b = document.body;
+  if (!b) return false;
+  const t = b.innerText;
+  if (t.startsWith('You need to enable JavaScript') || t.includes('Please enable JavaScript'))
+    return false;
+  for (const r of b.querySelectorAll('#root, #app, #__next, #__nuxt')) {
+    if (!r.innerText.trim()) return false;
+  }
+  if (b.querySelectorAll('p,h1,h2,h3,h4,h5,h6,article,main,section,li,td,th').length === 0)
+    return false;
+  const c = b.cloneNode(true);
+  c.querySelectorAll('script, style, noscript').forEach(e => e.remove());
+  return c.innerText.trim().length >= 200;
+}"""
+
+
+async def _wait_for_content(page):
+    start = time.monotonic()
+    while True:
+        if await page.evaluate(_IS_CONTENT_RENDERED):
+            return
+        if (time.monotonic() - start) * 1000 >= CONTENT_WAIT_MS:
+            break
+        await page.wait_for_timeout(CONTENT_INTERVAL_MS)
     async with _browsers_lock:
         if seed in _browsers:
             _browsers.move_to_end(seed)
@@ -104,6 +131,7 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
                 await page.wait_for_timeout(custom_wait_ms)
             elif not wait_strategy:
                 await page.wait_for_timeout(EXTRA_WAIT_MS)
+                await _wait_for_content(page)
 
         except (BotBlockedError, InvalidUrlError):
             raise
