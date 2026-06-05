@@ -76,6 +76,9 @@ async def _wait_for_content(page):
         if (time.monotonic() - start) * 1000 >= CONTENT_WAIT_MS:
             break
         await page.wait_for_timeout(CONTENT_INTERVAL_MS)
+
+
+async def get_browser(seed: str):
     async with _browsers_lock:
         if seed in _browsers:
             _browsers.move_to_end(seed)
