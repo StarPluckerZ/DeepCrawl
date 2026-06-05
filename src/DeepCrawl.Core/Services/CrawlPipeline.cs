@@ -20,15 +20,24 @@ public class CrawlPipeline(
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private static readonly Random TtlRandom = new();
-    private const int MaxStabilityN = 5;
 
     private CacheKey GetCacheKey(string contextHash, TimeSpan ttl)
         => new CacheKey("Crawl", contextHash, ttl);
 
     private TimeSpan ComputeTtl(int n)
     {
-        n = Math.Min(n, MaxStabilityN);
-        var raw = Math.Min(crawlConfig.CacheBaseMinutes * Math.Pow(2, n), crawlConfig.CacheMaxMinutes);
+        var threshold = crawlConfig.CacheThreshold;
+        double raw;
+        if (n <= threshold)
+        {
+            raw = crawlConfig.CacheBaseMinutes * (1 + Math.Log2(Math.Max(n, 0) + 1));
+        }
+        else
+        {
+            var atThreshold = crawlConfig.CacheBaseMinutes * (1 + Math.Log2(threshold + 1));
+            raw = atThreshold * Math.Pow(2, n - threshold);
+        }
+        raw = Math.Min(raw, crawlConfig.CacheMaxMinutes);
         var factor = 0.85 + TtlRandom.NextDouble() * 0.30;
         return TimeSpan.FromMinutes(raw * factor);
     }
@@ -125,7 +134,9 @@ public class CrawlPipeline(
         if (existing is not null)
         {
             existing.FetchTier = tier;
-            existing.StabilityCount = 1;
+            existing.StabilityCount = Math.Max(1, Math.Min(
+                existing.StabilityCount / crawlConfig.CacheResetDivisor,
+                crawlConfig.CacheResetCap));
             existing.HtmlHash = htmlHash;
             existing.ContextHash = contextHash;
             existing.MarkdownContent = cleanResult.Output;
