@@ -38,6 +38,7 @@ services:
       CLOAKBROWSER_MAX_CONCURRENT: "3"
       CLOAKBROWSER_TIMEOUT_MS: "30000"
       CLOAKBROWSER_MAX_BROWSERS: "3"
+      CLOAKBROWSER_EXTRA_WAIT_MS: "2000"
     volumes:
       - cloakdata:/root/.cloakbrowser
 

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 MAX_CONCURRENT = int(os.getenv("CLOAKBROWSER_MAX_CONCURRENT", "3"))
 DEFAULT_TIMEOUT_MS = int(os.getenv("CLOAKBROWSER_TIMEOUT_MS", "30000"))
 MAX_BROWSERS = int(os.getenv("CLOAKBROWSER_MAX_BROWSERS", str(MAX_CONCURRENT)))
+EXTRA_WAIT_MS = int(os.getenv("CLOAKBROWSER_EXTRA_WAIT_MS", "2000"))
 
 VALID_WAIT_UNTIL = {"load", "networkidle", "domcontentloaded", "commit"}
 
@@ -29,8 +30,11 @@ def _extract_domain(url: str) -> str:
     return urlparse(url).hostname or url
 
 
+_UNNECESSARY_TYPES = ("image", "media", "font", "websocket", "eventsource", "ping")
+
+
 def _block_unnecessary_resources(route):
-    if route.request.resource_type in ("image", "media", "font"):
+    if route.request.resource_type in _UNNECESSARY_TYPES:
         route.abort()
     else:
         route.continue_()
@@ -98,6 +102,8 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
 
             if custom_wait_ms:
                 await page.wait_for_timeout(custom_wait_ms)
+            elif not wait_strategy:
+                await page.wait_for_timeout(EXTRA_WAIT_MS)
 
         except (BotBlockedError, InvalidUrlError):
             raise
