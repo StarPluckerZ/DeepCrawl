@@ -48,8 +48,11 @@ async def _wait_for_content(page):
     max_text = 0
     max_nodes = 0
     while True:
-        text = await page.evaluate("() => document.body.innerText.length")
-        nodes = await page.evaluate("() => document.querySelectorAll('*').length")
+        try:
+            text = await page.evaluate("() => document.body.innerText.length")
+            nodes = await page.evaluate("() => document.querySelectorAll('*').length")
+        except Exception:
+            break
         if text > max_text or nodes > max_nodes:
             logger.debug("Content growing: text %d->%d, nodes %d->%d", max_text, text, max_nodes, nodes)
             max_text = max(max_text, text)
