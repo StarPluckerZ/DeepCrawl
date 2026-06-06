@@ -88,13 +88,13 @@ builder.Services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =
 })
 .AddPolicyHandler(HttpPolicyExtensions
     .HandleTransientHttpError()
-    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
+    .WaitAndRetryAsync(1, _ => TimeSpan.FromSeconds(2)));
 
 builder.Services.AddHttpClient("Direct", c =>
 {
     if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
         c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
-    c.Timeout = TimeSpan.FromSeconds(30);
+    c.Timeout = TimeSpan.FromSeconds(15);
 });
 
 if (crawlConfig.ProxyConfigured)
@@ -103,7 +103,7 @@ if (crawlConfig.ProxyConfigured)
     {
         if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
             c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
-        c.Timeout = TimeSpan.FromSeconds(30);
+        c.Timeout = TimeSpan.FromSeconds(15);
     })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {

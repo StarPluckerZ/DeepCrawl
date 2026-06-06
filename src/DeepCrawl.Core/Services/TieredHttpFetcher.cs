@@ -78,7 +78,7 @@ public class TieredHttpFetcher(
         if (!success && !skipTier3)
         {
             tier = FetchTier.CloakBrowser;
-            var t3Timeout = jsSkeleton ? 15 : DEFAULT_TIMEOUT_SECONDS;
+            var t3Timeout = jsSkeleton ? 30 : DEFAULT_TIMEOUT_SECONDS;
             var t3Wait = (jsSkeleton && !proxyConfigured) ? "networkidle" : waitUntil;
             using var t3cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             t3cts.CancelAfter(TimeSpan.FromSeconds(t3Timeout));
