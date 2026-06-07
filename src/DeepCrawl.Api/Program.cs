@@ -97,7 +97,8 @@ builder.Services.AddHttpClient("Direct", c =>
     if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
         c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
     c.Timeout = TimeSpan.FromSeconds(15);
-});
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = true });
 
 if (crawlConfig.ProxyConfigured)
 {
@@ -109,6 +110,7 @@ if (crawlConfig.ProxyConfigured)
     })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
+        AllowAutoRedirect = true,
         Proxy = new WebProxy($"{crawlConfig.ProxyAddress}:{crawlConfig.ProxyPort}")
         {
             Credentials = new NetworkCredential(crawlConfig.ProxyUsername, crawlConfig.ProxyPassword)
