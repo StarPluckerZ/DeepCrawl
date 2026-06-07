@@ -9,6 +9,8 @@ using DeepCrawl.Infrastructure.Auth;
 using DeepCrawl.Infrastructure.Cleaning;
 using DeepCrawl.Infrastructure.Caching;
 using DeepCrawl.Infrastructure.Clients;
+using DeepCrawl.Infrastructure.Filtering;
+using DeepCrawl.Infrastructure.Search;
 using DeepSeekSDK;
 using FreeSql;
 using FreeSql.DataAnnotations;
@@ -149,6 +151,51 @@ builder.Services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.Open
 builder.Services.AddSingleton<CleanPipeline>();
 builder.Services.AddSingleton<ITokenValidator, TokenValidator>();
 builder.Services.AddScoped<ICrawlPipeline, CrawlPipeline>();
+
+// --- Search ---
+var bochaApiKey = Environment.GetEnvironmentVariable("BOCHA_API_KEY")
+                  ?? builder.Configuration["Search:Bocha:ApiKey"] ?? "";
+
+if (string.IsNullOrWhiteSpace(bochaApiKey))
+    Console.WriteLine("[WARN] BOCHA_API_KEY env / Search:Bocha:ApiKey is empty — search will fail.");
+
+var bochaBaseUrl = builder.Configuration["Search:Bocha:BaseUrl"] ?? "https://api.bocha.cn";
+var bochaTimeout = builder.Configuration.GetValue<int?>("Search:Bocha:TimeoutSeconds") ?? 30;
+
+builder.Services.AddHttpClient<ISearchProvider, BochaSearchProvider>(client =>
+{
+    client.BaseAddress = new Uri(bochaBaseUrl);
+    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {bochaApiKey}");
+    client.Timeout = TimeSpan.FromSeconds(bochaTimeout);
+});
+
+var uBlacklistOpts = builder.Configuration.GetSection("Search:UBlacklist").Get<UBlacklistOptions>() ?? new UBlacklistOptions();
+builder.Services.AddSingleton(uBlacklistOpts);
+
+builder.Services.AddHttpClient("UBlacklist", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(60);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("DeepCrawl/1.0");
+});
+
+builder.Services.AddSingleton<UBlacklistFilter>();
+builder.Services.AddSingleton<IUrlFilter>(sp => sp.GetRequiredService<UBlacklistFilter>());
+
+var reputationOpts = builder.Configuration.GetSection("Search:Reputation").Get<ReputationOptions>() ?? new ReputationOptions();
+builder.Services.AddSingleton(reputationOpts);
+
+builder.Services.AddScoped<DomainReputationService>();
+builder.Services.AddScoped<IUrlFilter>(sp => sp.GetRequiredService<DomainReputationService>());
+builder.Services.AddScoped<IDomainReporter>(sp => sp.GetRequiredService<DomainReputationService>());
+
+builder.Services.AddHostedService<UBlacklistUpdateService>();
+
+var searchServiceOpts = new SearchServiceOptions
+{
+    CacheMinutes = builder.Configuration.GetValue<int?>("Search:CacheMinutes") ?? 60
+};
+builder.Services.AddSingleton(searchServiceOpts);
+builder.Services.AddScoped<ISearchService, SearchService>();
 
 var app = builder.Build();
 

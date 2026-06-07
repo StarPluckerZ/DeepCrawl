@@ -7,6 +7,7 @@ public record ScrapeResponse
     public bool Success { get; init; }
     public ScrapeData? Data { get; init; }
     public string? Error { get; init; }
+    public DateTimeOffset? BlockedUntil { get; init; }
 }
 
 public record ScrapeData

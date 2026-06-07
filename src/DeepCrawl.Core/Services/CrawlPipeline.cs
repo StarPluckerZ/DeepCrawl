@@ -17,6 +17,7 @@ public class CrawlPipeline(
     TieredHttpFetcher tieredFetcher,
     CrawlConfig crawlConfig,
     IBaseRepository<CrawlStatistic> crawlStatisticRepo,
+    IDomainReporter domainReporter,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private static readonly Random TtlRandom = new();
@@ -77,19 +78,41 @@ public class CrawlPipeline(
             return cached;
         }
 
+        var requestDomain = ExtractDomain(request.Url);
+        if (requestDomain is not null)
+        {
+            var blockedKey = new CacheKey("Reputation", $"Blocked:{requestDomain}");
+            if (await redisClient.ExistsAsync(blockedKey, ct))
+            {
+                var blockedUntilStr = await redisClient.GetAsync<string>(blockedKey, ct);
+                DateTimeOffset? blockedUntil = null;
+                if (blockedUntilStr is not null && DateTimeOffset.TryParse(blockedUntilStr, out var parsed))
+                    blockedUntil = parsed;
+
+                logger.LogInformation("Domain {Domain} is blocked, fast-failing {Url}", requestDomain, request.Url);
+                return new ScrapeResponse
+                {
+                    Success = false,
+                    Error = "The website refused the connection, likely due to strict anti-crawling measures. This domain will be temporarily avoided.",
+                    BlockedUntil = blockedUntil
+                };
+            }
+        }
+
         var (success, tier, rawHtml, fetchError) = await tieredFetcher.FetchAsync(
             request.Url, request.WaitUntil, ct);
 
         if (!success)
         {
+            await domainReporter.RecordFailureAsync(request.Url, ct);
             await crawlRecordRepo.InsertAsync(new CrawlRecord
             {
                 Url = request.Url,
                 Status = CrawlStatus.Failed,
                 FetchTier = tier,
                 ErrorMessage = fetchError ?? "All fetch tiers failed",
-                CompletedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
+                CompletedAt = DateTime.UtcNow,
+                LastAccessedAt = DateTime.UtcNow
             }, ct);
             return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed" };
         }
@@ -97,7 +120,13 @@ public class CrawlPipeline(
         int? statusCode = 200;
         string contentType = "text/html";
 
-        var htmlHash = HtmlHashService.ComputeSha256(rawHtml!);
+        if (rawHtml is null)
+        {
+            await domainReporter.RecordFailureAsync(request.Url, ct);
+            return new ScrapeResponse { Success = false, Error = "Fetched content was empty" };
+        }
+
+        var htmlHash = HtmlHashService.ComputeSha256(rawHtml);
 
         var sameHash = await crawlRecordRepo
             .Where(c => c.Url == request.Url && c.HtmlHash == htmlHash)
@@ -106,7 +135,7 @@ public class CrawlPipeline(
         {
             sameHash.FetchTier = tier;
             sameHash.StabilityCount++;
-            sameHash.LastAccessedAt = DateTime.Now;
+            sameHash.LastAccessedAt = DateTime.UtcNow;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
             logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
 
@@ -146,8 +175,8 @@ public class CrawlPipeline(
                 ? JsonSerializer.Serialize(cleanResult.Metadata)
                 : null;
             existing.Status = CrawlStatus.Completed;
-            existing.CompletedAt = DateTime.Now;
-            existing.LastAccessedAt = DateTime.Now;
+            existing.CompletedAt = DateTime.UtcNow;
+            existing.LastAccessedAt = DateTime.UtcNow;
             await crawlRecordRepo.UpdateAsync(existing, ct);
             recordId = existing.Id;
         }
@@ -167,8 +196,8 @@ public class CrawlPipeline(
                 Status = CrawlStatus.Completed,
                 FetchTier = tier,
                 StabilityCount = 1,
-                CompletedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
+                CompletedAt = DateTime.UtcNow,
+                LastAccessedAt = DateTime.UtcNow
             };
             await crawlRecordRepo.InsertAsync(record, ct);
             recordId = record.Id;
@@ -186,13 +215,14 @@ public class CrawlPipeline(
                 CacheHitTokens = cleanResult.TokenUsage.CacheHitTokens,
                 CacheMissTokens = cleanResult.TokenUsage.CacheMissTokens,
                 Model = cleanResult.TokenUsage.Model,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             }, ct);
         }
 
         var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
         var finalTtl = ComputeTtl(existing?.StabilityCount ?? 1);
         await redisClient.SetAsync(GetCacheKey(contextHash, finalTtl), response, ct);
+        await domainReporter.RecordSuccessAsync(request.Url, ct);
         return response;
     }
 
@@ -215,4 +245,12 @@ public class CrawlPipeline(
         };
     }
 
+    private static string? ExtractDomain(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return uri.Host.ToLowerInvariant();
+        if (Uri.TryCreate($"https://{url}", UriKind.Absolute, out uri))
+            return uri.Host.ToLowerInvariant();
+        return null;
+    }
 }

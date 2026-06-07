@@ -33,4 +33,14 @@ public interface IRedisClient
 
     Task<long> DeleteByPrefixAsync(string prefix, CancellationToken ct = default);
     long DeleteByPrefix(string prefix);
+
+    Task<bool> SetContainsAsync(CacheKey key, string member, CancellationToken ct = default);
+    Task SetAddAsync(CacheKey key, string[] members, CancellationToken ct = default);
+
+    Task<HashEntry[]> HashGetAllAsync(CacheKey key, CancellationToken ct = default);
+    Task HashIncrementAsync(CacheKey key, string field, long value = 1, CancellationToken ct = default);
+    Task HashSetAsync(CacheKey key, HashEntry[] entries, CancellationToken ct = default);
+
+    Task KeyExpireAsync(CacheKey key, TimeSpan expiry, CancellationToken ct = default);
+    Task RenameKeyAsync(CacheKey key, CacheKey newKey, CancellationToken ct = default);
 }

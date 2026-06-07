@@ -86,7 +86,7 @@ public class RedisClient : IRedisClient
         if (keys.Length == 0) return [];
         var redisKeys = keys.Select(k => (RedisKey)FullKey(k)).ToArray();
         var values = _db.StringGet(redisKeys);
-        return values.Select(v => RedisSerializer.Deserialize<T>(v.ToString())).ToArray();
+        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>(v.ToString()) : default).ToArray();
     }
 
     public async Task<T?[]> GetManyAsync<T>(CacheKey[] keys, CancellationToken ct = default)
@@ -94,7 +94,7 @@ public class RedisClient : IRedisClient
         if (keys.Length == 0) return [];
         var redisKeys = keys.Select(k => (RedisKey)FullKey(k)).ToArray();
         var values = await _db.StringGetAsync(redisKeys).WaitAsync(ct);
-        return values.Select(v => RedisSerializer.Deserialize<T>(v.ToString())).ToArray();
+        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>(v.ToString()) : default).ToArray();
     }
 
     public void SetMany<T>(KeyValuePair<CacheKey, T>[] entries)
@@ -153,5 +153,47 @@ public class RedisClient : IRedisClient
             return count
             """, values: new RedisValue[] { pattern }).WaitAsync(ct);
         return (long)result;
+    }
+
+    public async Task<bool> SetContainsAsync(CacheKey key, string member, CancellationToken ct = default)
+    {
+        return await _db.SetContainsAsync(FullKey(key), member).WaitAsync(ct);
+    }
+
+    public async Task SetAddAsync(CacheKey key, string[] members, CancellationToken ct = default)
+    {
+        var redisValues = members.Select(m => (RedisValue)m).ToArray();
+        await _db.SetAddAsync(FullKey(key), redisValues).WaitAsync(ct);
+        if (key.Expiry.HasValue)
+            await _db.KeyExpireAsync(FullKey(key), key.Expiry.Value).WaitAsync(ct);
+    }
+
+    public async Task<HashEntry[]> HashGetAllAsync(CacheKey key, CancellationToken ct = default)
+    {
+        return await _db.HashGetAllAsync(FullKey(key)).WaitAsync(ct);
+    }
+
+    public async Task HashIncrementAsync(CacheKey key, string field, long value = 1, CancellationToken ct = default)
+    {
+        await _db.HashIncrementAsync(FullKey(key), field, value).WaitAsync(ct);
+        if (key.Expiry.HasValue)
+            await _db.KeyExpireAsync(FullKey(key), key.Expiry.Value).WaitAsync(ct);
+    }
+
+    public async Task HashSetAsync(CacheKey key, HashEntry[] entries, CancellationToken ct = default)
+    {
+        await _db.HashSetAsync(FullKey(key), entries).WaitAsync(ct);
+        if (key.Expiry.HasValue)
+            await _db.KeyExpireAsync(FullKey(key), key.Expiry.Value).WaitAsync(ct);
+    }
+
+    public async Task KeyExpireAsync(CacheKey key, TimeSpan expiry, CancellationToken ct = default)
+    {
+        await _db.KeyExpireAsync(FullKey(key), expiry).WaitAsync(ct);
+    }
+
+    public async Task RenameKeyAsync(CacheKey key, CacheKey newKey, CancellationToken ct = default)
+    {
+        await _db.KeyRenameAsync(FullKey(key), FullKey(newKey)).WaitAsync(ct);
     }
 }

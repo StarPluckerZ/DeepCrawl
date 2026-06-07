@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
+    <PackageReference Include="FreeSql.DbContext" />
     <PackageReference Include="FreeSql.Provider.PostgreSQL" />
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <PackageReference Include="ReverseMarkdown" />
