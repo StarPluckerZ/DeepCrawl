@@ -59,12 +59,6 @@ public partial class UBlacklistFilter : IUrlFilter
 
     public async Task LoadRulesAsync(CancellationToken ct = default)
     {
-        if (await _redis.ExistsAsync(DomainsKey, ct))
-        {
-            _logger.LogInformation("UBlacklist rules already loaded in Redis");
-            return;
-        }
-
         await RefreshAsync(ct);
     }
 
@@ -84,7 +78,7 @@ public partial class UBlacklistFilter : IUrlFilter
         {
             try
             {
-                _logger.LogDebug("Downloading UBlacklist source: {Url}", url);
+                _logger.LogInformation("Downloading UBlacklist source: {Url}", url);
                 var response = await httpClient.GetAsync(url, ct);
                 response.EnsureSuccessStatusCode();
 
