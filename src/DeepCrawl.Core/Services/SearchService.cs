@@ -34,7 +34,7 @@ public class SearchService(
         if (cached is not null)
         {
             logger.LogDebug("Search cache hit for {Query}", request.Query);
-            return await BuildResponseAsync(cached, ct);
+            return await BuildResponseAsync(request.Query, cached, ct);
         }
 
         await using var handle = await redis
@@ -45,7 +45,7 @@ public class SearchService(
         if (cached is not null)
         {
             logger.LogDebug("Search cache hit after lock for {Query}", request.Query);
-            return await BuildResponseAsync(cached, ct);
+            return await BuildResponseAsync(request.Query, cached, ct);
         }
 
         var freshness = ResolveFreshness(request.Tbs);
@@ -65,8 +65,6 @@ public class SearchService(
         try
         {
             rawResults = await searchProvider.SearchAsync(providerRequest, ct);
-            logger.LogInformation("Search completed by {Provider}: {Query} returned {Count} results",
-                searchProvider.ProviderName, request.Query, rawResults.Count);
         }
         catch (Exception ex)
         {
@@ -75,10 +73,10 @@ public class SearchService(
         }
 
         await redis.SetAsync(cache, rawResults, ct);
-        return await BuildResponseAsync(rawResults, ct);
+        return await BuildResponseAsync(request.Query, rawResults, ct);
     }
 
-    private async Task<SearchResponse> BuildResponseAsync(List<SearchProviderResult> rawResults, CancellationToken ct)
+    private async Task<SearchResponse> BuildResponseAsync(string query, List<SearchProviderResult> rawResults, CancellationToken ct)
     {
         var filtered = new List<SearchResult>(rawResults.Count);
         foreach (var r in rawResults)
@@ -102,6 +100,9 @@ public class SearchService(
         var warning = filtered.Count < rawResults.Count
             ? $"{rawResults.Count - filtered.Count} results filtered"
             : null;
+
+        logger.LogInformation("Search {Query} , raw {Total} → {Filtered} after filters ({Removed} removed)",
+            query, rawResults.Count, filtered.Count, rawResults.Count - filtered.Count);
 
         return new SearchResponse
         {
