@@ -170,6 +170,17 @@ builder.Services.AddHttpClient<ISearchProvider, BochaSearchProvider>(client =>
 });
 
 var uBlacklistOpts = builder.Configuration.GetSection("Search:UBlacklist").Get<UBlacklistOptions>() ?? new UBlacklistOptions();
+if (uBlacklistOpts.SubscriptionUrls.Count == 0)
+{
+    uBlacklistOpts.SubscriptionUrls = new List<string>
+    {
+        "https://raw.githubusercontent.com/eallion/uBlacklist-subscription-compilation/main/uBlacklist.txt",
+        "https://danny0838.github.io/content-farm-terminator/files/blocklist-ublacklist/content-farms.txt",
+        "https://danny0838.github.io/content-farm-terminator/files/blocklist-ublacklist/bad-cloners.txt",
+        "https://danny0838.github.io/content-farm-terminator/files/blocklist-ublacklist/scam-sites.txt",
+        "https://danny0838.github.io/content-farm-terminator/files/blocklist-ublacklist/fake-news.txt",
+    };
+}
 builder.Services.AddSingleton(uBlacklistOpts);
 
 builder.Services.AddHttpClient("UBlacklist", c =>
