@@ -6,6 +6,7 @@ using Xunit;
 
 namespace DeepCrawl.Infrastructure.Tests;
 
+[Collection("Redis")]
 public class RedisClientTests : IAsyncLifetime
 {
     private readonly IRedisClient _client;
