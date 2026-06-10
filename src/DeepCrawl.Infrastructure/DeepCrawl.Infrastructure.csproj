@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DeepCrawl.Domain\DeepCrawl.Domain.csproj" />
+    <ProjectReference Include="..\DeepCrawl.Core\DeepCrawl.Core.csproj" />
     <ProjectReference Include="..\DeepSeekSDK\DeepSeekSDK.csproj" />
   </ItemGroup>
 

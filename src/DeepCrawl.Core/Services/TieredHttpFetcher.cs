@@ -13,6 +13,8 @@ public class TieredHttpFetcher(
     ILogger<TieredHttpFetcher> logger)
 {
     private const int DEFAULT_TIMEOUT_SECONDS = 30;
+    private readonly SemaphoreSlim _httpSem = new(crawlConfig.HttpConcurrent);
+    private readonly SemaphoreSlim _cloakSem = new(crawlConfig.CloakConcurrent);
 
     public async Task<(bool Success, FetchTier Tier, string? Html, string? Error)> FetchAsync(
         string url, string? waitUntil, CancellationToken ct)
@@ -27,6 +29,7 @@ public class TieredHttpFetcher(
         string? lastError = null;
 
         // Tier 1: HttpClient direct
+        await _httpSem.WaitAsync(ct);
         try
         {
             html = await directFetcher.FetchDirectAsync(url, ct);
@@ -47,11 +50,16 @@ public class TieredHttpFetcher(
         {
             logger.LogWarning("Tier 1 (HttpClient) failed for {Url}: {Msg}, falling back", url, ex.Message);
         }
+        finally
+        {
+            _httpSem.Release();
+        }
 
         // Tier 2: HttpClient + proxy
         if (!success && proxyConfigured && !jsSkeleton)
         {
             tier = FetchTier.HttpClientProxy;
+            await _httpSem.WaitAsync(ct);
             try
             {
                 html = await directFetcher.FetchWithProxyAsync(url, ct);
@@ -71,6 +79,10 @@ public class TieredHttpFetcher(
             {
                 logger.LogWarning("Tier 2 (HttpClient+proxy) failed for {Url}: {Msg}, falling back", url, ex.Message);
             }
+            finally
+            {
+                _httpSem.Release();
+            }
         }
 
         // Tier 3: Cloak browser
@@ -82,6 +94,7 @@ public class TieredHttpFetcher(
             var t3Wait = (jsSkeleton && !proxyConfigured) ? "networkidle" : waitUntil;
             using var t3cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             t3cts.CancelAfter(TimeSpan.FromSeconds(t3Timeout));
+            await _cloakSem.WaitAsync(ct);
             try
             {
                 html = await cloakClient.FetchHtmlAsync(url, t3Wait, null, t3cts.Token);
@@ -97,12 +110,17 @@ public class TieredHttpFetcher(
                 lastError = ex.Message;
                 logger.LogWarning("Tier 3 (Cloak) failed for {Url}: {Msg}, falling back", url, ex.Message);
             }
+            finally
+            {
+                _cloakSem.Release();
+            }
         }
 
         // Tier 4: Cloak browser + proxy
         if (!success && proxyConfigured)
         {
             tier = FetchTier.CloakBrowserProxy;
+            await _cloakSem.WaitAsync(ct);
             try
             {
                 html = await cloakClient.FetchHtmlAsync(url, null, proxyUrl, ct);
@@ -113,6 +131,10 @@ public class TieredHttpFetcher(
             {
                 lastError = ex.Message;
                 logger.LogWarning("Tier 4 (Cloak+proxy) failed for {Url}: {Msg}", url, ex.Message);
+            }
+            finally
+            {
+                _cloakSem.Release();
             }
         }
 

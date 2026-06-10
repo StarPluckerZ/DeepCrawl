@@ -14,6 +14,8 @@ public class CrawlConfig
     public int CacheThreshold { get; set; } = 3;
     public int CacheResetDivisor { get; set; } = 5;
     public int CacheResetCap { get; set; } = 6;
+    public int HttpConcurrent { get; set; } = 20;
+    public int CloakConcurrent { get; set; } = 5;
 
     public bool ProxyConfigured => !string.IsNullOrWhiteSpace(ProxyAddress);
     public string ProxyUrl => $"http://{Uri.EscapeDataString(ProxyUsername ?? "")}:{Uri.EscapeDataString(ProxyPassword ?? "")}@{ProxyAddress}:{ProxyPort}";

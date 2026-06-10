@@ -20,6 +20,8 @@ packages/
 !.env.example
 appsettings.*.local.json
 appsettings.Development.json
+**/Properties/launchSettings.json
+src/DeepCrawl.Api/plugins/
 
 # Docker volumes
 pgdata/

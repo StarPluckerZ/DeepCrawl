@@ -12,6 +12,7 @@ public class SearchService(
     IEnumerable<IUrlFilter> urlFilters,
     IRedisClient redis,
     SearchServiceOptions options,
+    IEnumerable<IAfterSearchAction> afterActions,
     ILogger<SearchService> logger)
     : ISearchService
 {
@@ -73,6 +74,11 @@ public class SearchService(
         }
 
         await redis.SetAsync(cache, rawResults, ct);
+
+        var context = new SearchContext { Query = request.Query, RawResults = rawResults };
+        foreach (var action in afterActions)
+            await action.ExecuteAsync(context, ct);
+
         return await BuildResponseAsync(request.Query, rawResults, ct);
     }
 
