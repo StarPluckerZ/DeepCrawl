@@ -35,6 +35,7 @@ public class SearchService(
         if (cached is not null)
         {
             logger.LogDebug("Search cache hit for {Query}", request.Query);
+            await ExecuteAfterActions(request.Query, cached, ct);
             return await BuildResponseAsync(request.Query, cached, ct);
         }
 
@@ -46,6 +47,7 @@ public class SearchService(
         if (cached is not null)
         {
             logger.LogDebug("Search cache hit after lock for {Query}", request.Query);
+            await ExecuteAfterActions(request.Query, cached, ct);
             return await BuildResponseAsync(request.Query, cached, ct);
         }
 
@@ -74,12 +76,16 @@ public class SearchService(
         }
 
         await redis.SetAsync(cache, rawResults, ct);
-
-        var context = new SearchContext { Query = request.Query, RawResults = rawResults };
-        foreach (var action in afterActions)
-            await action.ExecuteAsync(context, ct);
+        await ExecuteAfterActions(request.Query, rawResults, ct);
 
         return await BuildResponseAsync(request.Query, rawResults, ct);
+    }
+
+    private async Task ExecuteAfterActions(string query, List<SearchProviderResult> rawResults, CancellationToken ct = default)
+    {
+        var context = new SearchContext { Query = query, RawResults = rawResults };
+        foreach (var action in afterActions)
+            await action.ExecuteAsync(context, ct);
     }
 
     private async Task<SearchResponse> BuildResponseAsync(string query, List<SearchProviderResult> rawResults, CancellationToken ct)

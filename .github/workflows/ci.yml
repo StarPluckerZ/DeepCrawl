@@ -39,7 +39,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore --force
 
       - name: Build
         run: dotnet build -c Release

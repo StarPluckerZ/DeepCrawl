@@ -111,8 +111,8 @@ public class CrawlPipeline(
                 Status = CrawlStatus.Failed,
                 FetchTier = tier,
                 ErrorMessage = fetchError ?? "All fetch tiers failed",
-                CompletedAt = DateTime.UtcNow,
-                LastAccessedAt = DateTime.UtcNow
+                CompletedAt = DateTime.Now,
+                LastAccessedAt = DateTime.Now
             }, ct);
             return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed" };
         }
@@ -135,7 +135,7 @@ public class CrawlPipeline(
         {
             sameHash.FetchTier = tier;
             sameHash.StabilityCount++;
-            sameHash.LastAccessedAt = DateTime.UtcNow;
+            sameHash.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
             logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
 
@@ -175,8 +175,8 @@ public class CrawlPipeline(
                 ? JsonSerializer.Serialize(cleanResult.Metadata)
                 : null;
             existing.Status = CrawlStatus.Completed;
-            existing.CompletedAt = DateTime.UtcNow;
-            existing.LastAccessedAt = DateTime.UtcNow;
+            existing.CompletedAt = DateTime.Now;
+            existing.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(existing, ct);
             recordId = existing.Id;
         }
@@ -196,8 +196,8 @@ public class CrawlPipeline(
                 Status = CrawlStatus.Completed,
                 FetchTier = tier,
                 StabilityCount = 1,
-                CompletedAt = DateTime.UtcNow,
-                LastAccessedAt = DateTime.UtcNow
+                CompletedAt = DateTime.Now,
+                LastAccessedAt = DateTime.Now
             };
             await crawlRecordRepo.InsertAsync(record, ct);
             recordId = record.Id;
@@ -215,7 +215,7 @@ public class CrawlPipeline(
                 CacheHitTokens = cleanResult.TokenUsage.CacheHitTokens,
                 CacheMissTokens = cleanResult.TokenUsage.CacheMissTokens,
                 Model = cleanResult.TokenUsage.Model,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             }, ct);
         }
 

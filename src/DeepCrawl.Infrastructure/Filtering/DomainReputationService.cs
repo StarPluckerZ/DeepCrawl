@@ -41,12 +41,12 @@ public class DomainReputationService : IUrlFilter, IDomainReporter
             return true;
 
         var record = await _repo
-            .Where(r => r.Domain == domain && r.BlockedUntil > DateTime.UtcNow)
+            .Where(r => r.Domain == domain && r.BlockedUntil > DateTime.Now)
             .FirstAsync(ct);
 
         if (record is null) return false;
 
-        var remaining = record.BlockedUntil!.Value - DateTime.UtcNow;
+        var remaining = record.BlockedUntil!.Value - DateTime.Now;
         if (remaining > TimeSpan.Zero)
         {
             await _redis.SetAsync(BlockedKey(domain, remaining), record.BlockedUntil.Value.ToString("O"), ct);
@@ -68,11 +68,11 @@ public class DomainReputationService : IUrlFilter, IDomainReporter
 
         record.ConsecutiveFailures++;
         record.TotalFailures++;
-        record.LastFailureAt = DateTime.UtcNow;
-        record.UpdatedAt = DateTime.UtcNow;
+        record.LastFailureAt = DateTime.Now;
+        record.UpdatedAt = DateTime.Now;
 
         var ttl = ComputeBlockDuration(record.ConsecutiveFailures);
-        record.BlockedUntil = DateTime.UtcNow + ttl;
+        record.BlockedUntil = DateTime.Now + ttl;
 
         await _repo.InsertOrUpdateAsync(record, ct);
 
@@ -94,8 +94,8 @@ public class DomainReputationService : IUrlFilter, IDomainReporter
 
         record.ConsecutiveFailures = 0;
         record.BlockedUntil = null;
-        record.LastSuccessAt = DateTime.UtcNow;
-        record.UpdatedAt = DateTime.UtcNow;
+        record.LastSuccessAt = DateTime.Now;
+        record.UpdatedAt = DateTime.Now;
         await _repo.UpdateAsync(record, ct);
 
         await _redis.DeleteAsync(BlockedKey(domain), ct);
