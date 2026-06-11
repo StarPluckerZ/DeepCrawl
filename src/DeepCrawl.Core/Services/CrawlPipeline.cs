@@ -69,7 +69,7 @@ public class CrawlPipeline(
 
         await using var handle = await redisClient
             .GetLock($"Crawl:{request.Url}")
-            .AcquireAsync(TimeSpan.FromSeconds(60), ct);
+            .AcquireAsync(TimeSpan.FromSeconds(180), ct);
         // double check
         cached = await redisClient.GetAsync<ScrapeResponse>(GetCacheKey(contextHash, DefaultTtl), ct);
         if (cached is not null)
