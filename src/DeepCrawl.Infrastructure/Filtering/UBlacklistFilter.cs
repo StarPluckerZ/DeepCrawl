@@ -64,6 +64,11 @@ public partial class UBlacklistFilter : IUrlFilter
 
     public async Task RefreshAsync(CancellationToken ct = default)
     {
+        // Distributed lock: prevent concurrent refreshes across API and Worker processes
+        await using var refreshLock = await _redis
+            .GetLock("UBlacklist:RefreshLock")
+            .AcquireAsync(TimeSpan.FromSeconds(120), ct);
+
         _logger.LogInformation("Refreshing UBlacklist rules from {Count} sources", _options.SubscriptionUrls.Count);
 
         var domains = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
