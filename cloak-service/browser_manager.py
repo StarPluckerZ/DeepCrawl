@@ -49,10 +49,16 @@ async def _wait_for_content(page):
     max_nodes = 0
     while True:
         try:
-            text = await page.evaluate("() => document.body.innerText.length")
+            text = await page.evaluate("() => document.body?.innerText?.length || 0")
             nodes = await page.evaluate("() => document.querySelectorAll('*').length")
         except Exception:
-            break
+            # DOM not ready yet (e.g. body still null), wait and retry
+            elapsed = (time.monotonic() - start) * 1000
+            if elapsed >= CONTENT_WAIT_MS:
+                logger.warning("Content wait timeout — DOM never stabilized")
+                break
+            await page.wait_for_timeout(CONTENT_INTERVAL_MS)
+            continue
         if text > max_text or nodes > max_nodes:
             logger.debug("Content growing: text %d->%d, nodes %d->%d", max_text, text, max_nodes, nodes)
             max_text = max(max_text, text)
@@ -132,10 +138,13 @@ async def fetch_html(url: str, wait_until: str | None = None, proxy: str | None 
 
         try:
             content = await page.content()
+            try:
+                body_len = await page.evaluate("() => document.body?.innerText?.length || 0")
+                nodes = await page.evaluate("() => document.querySelectorAll('*').length")
+            except Exception:
+                body_len, nodes = 0, 0
             logger.info("Page fetched: %d bytes, innerText=%d chars, nodes=%d",
-                       len(content),
-                       await page.evaluate("() => document.body.innerText.length"),
-                       await page.evaluate("() => document.querySelectorAll('*').length"))
+                       len(content), body_len, nodes)
         except Exception as e:
             raise FetchFailedError(f"Failed to get page content: {e}")
 
