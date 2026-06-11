@@ -81,11 +81,31 @@ public class SearchService(
         return await BuildResponseAsync(request.Query, rawResults, ct);
     }
 
-    private async Task ExecuteAfterActions(string query, List<SearchProviderResult> rawResults, CancellationToken ct = default)
+    private async Task ExecuteAfterActions(string query, List<SearchProviderResult> rawResults, CancellationToken ct)
     {
         var context = new SearchContext { Query = query, RawResults = rawResults };
         foreach (var action in afterActions)
-            await action.ExecuteAsync(context, ct);
+        {
+            if (action.Reliability == AfterActionReliability.BestEffort)
+            {
+                var captured = action;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await captured.ExecuteAsync(context, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "AfterAction {Name} (BestEffort) failed", captured.GetType().Name);
+                    }
+                }, CancellationToken.None);
+            }
+            else
+            {
+                await action.ExecuteAsync(context, ct);
+            }
+        }
     }
 
     private async Task<SearchResponse> BuildResponseAsync(string query, List<SearchProviderResult> rawResults, CancellationToken ct)
