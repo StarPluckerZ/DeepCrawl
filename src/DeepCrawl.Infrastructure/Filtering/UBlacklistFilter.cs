@@ -131,9 +131,14 @@ public partial class UBlacklistFilter : IUrlFilter
         if (exactDomains.Count > 0)
             await _redis.SetAddAsync(ExactDomainsTempKey, exactDomains.ToArray(), ct);
 
-        await _redis.RenameKeyAsync(DomainsTempKey, DomainsKey, ct);
-        await _redis.RenameKeyAsync(WhitelistTempKey, WhitelistKey, ct);
-        await _redis.RenameKeyAsync(ExactDomainsTempKey, ExactDomainsKey, ct);
+        if (domains.Count > 0)
+            await _redis.RenameKeyAsync(DomainsTempKey, DomainsKey, ct);
+
+        if (whitelist.Count > 0)
+            await _redis.RenameKeyAsync(WhitelistTempKey, WhitelistKey, ct);
+
+        if (exactDomains.Count > 0)
+            await _redis.RenameKeyAsync(ExactDomainsTempKey, ExactDomainsKey, ct);
 
         var pathJson = JsonSerializer.Serialize(pathRules, JsonOpts);
         await _redis.SetAsync(PathRulesKey, pathJson, ct);
