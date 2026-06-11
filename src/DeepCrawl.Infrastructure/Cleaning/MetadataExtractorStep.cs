@@ -32,6 +32,9 @@ public class MetadataExtractorStep : ICleanStep
             var config = Configuration.Default;
             var document = await BrowsingContext.New(config).OpenAsync(req => req.Content(input));
 
+            if (document.Head is null)
+                _logger.LogWarning("HTML document parsed without <head> element for {Url} — meta tags may be missed", context.Url);
+
             metadata.Title = document.Head?.QuerySelector("title")?.TextContent?.Trim();
 
             var htmlEl = document.DocumentElement;
@@ -39,7 +42,7 @@ public class MetadataExtractorStep : ICleanStep
 
             metadata.Description = GetMeta(document, "description");
             metadata.Keywords = GetMeta(document, "keywords");
-            metadata.Robots = GetMeta(document, "robots");
+            metadata.Robots = GetMeta(document, "robots") ?? GetMeta(document, null, "robots");
             metadata.OgTitle = GetMeta(document, null, "og:title");
             metadata.OgDescription = GetMeta(document, null, "og:description");
             metadata.OgUrl = GetMeta(document, null, "og:url");
@@ -47,11 +50,21 @@ public class MetadataExtractorStep : ICleanStep
             metadata.OgSiteName = GetMeta(document, null, "og:site_name");
             metadata.OgLocaleAlternate = GetAllMeta(document, null, "og:locale:alternate");
 
+            if (metadata.Robots is not null)
+                _logger.LogDebug("Robots meta extracted for {Url}: '{Robots}'", context.Url, metadata.Robots);
+            else
+                _logger.LogDebug("No robots meta tag found for {Url}", context.Url);
+
             _logger.LogDebug("Metadata extracted for {Url}: title={Title}", context.Url, metadata.Title);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Metadata extraction failed for {Url}", context.Url);
+            _logger.LogWarning(ex, "Metadata extraction failed for {Url}: {ErrorType} — {Message}",
+                context.Url, ex.GetType().Name, ex.Message);
         }
 
         context.Metadata = metadata;
@@ -65,7 +78,14 @@ public class MetadataExtractorStep : ICleanStep
             ? $"meta[name=\"{name}\"]"
             : $"meta[property=\"{property}\"]";
 
-        return doc.Head?.QuerySelector(selector)?.GetAttribute("content")?.Trim();
+        // Standard location: <head>
+        var headResult = doc.Head?.QuerySelector(selector)?.GetAttribute("content")?.Trim();
+        if (!string.IsNullOrWhiteSpace(headResult))
+            return headResult;
+
+        // Fallback: search entire document (handles missing <head>, fragmented HTML, etc.)
+        var docResult = doc.QuerySelector(selector)?.GetAttribute("content")?.Trim();
+        return !string.IsNullOrWhiteSpace(docResult) ? docResult : null;
     }
 
     private static string? GetAllMeta(IDocument doc, string? name = null, string? property = null)
@@ -74,10 +94,20 @@ public class MetadataExtractorStep : ICleanStep
             ? $"meta[name=\"{name}\"]"
             : $"meta[property=\"{property}\"]";
 
-        var values = doc.Head?.QuerySelectorAll(selector)
+        // Standard location: <head>
+        var headValues = doc.Head?.QuerySelectorAll(selector)
+            .Select(e => e.GetAttribute("content")?.Trim())
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .ToList();
+
+        if (headValues is { Count: > 0 })
+            return string.Join(", ", headValues);
+
+        // Fallback: search entire document
+        var docValues = doc.QuerySelectorAll(selector)
             .Select(e => e.GetAttribute("content")?.Trim())
             .Where(v => !string.IsNullOrWhiteSpace(v));
 
-        return string.Join(", ", values ?? []);
+        return string.Join(", ", docValues ?? []);
     }
 }

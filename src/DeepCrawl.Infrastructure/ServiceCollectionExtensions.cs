@@ -133,6 +133,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.ReverseMarkdownStep>();
         services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.OpenAICleanStep>();
         services.AddSingleton<CleanPipeline>();
+        services.AddSingleton<IRobotsTxtService, RobotsTxtService>();
         services.AddSingleton<ITokenValidator, TokenValidator>();
 
         // Reputation

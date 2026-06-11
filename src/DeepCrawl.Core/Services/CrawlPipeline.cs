@@ -18,6 +18,7 @@ public class CrawlPipeline(
     CrawlConfig crawlConfig,
     IBaseRepository<CrawlStatistic> crawlStatisticRepo,
     IDomainReporter domainReporter,
+    IRobotsTxtService robotsTxtService,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private static readonly Random TtlRandom = new();
@@ -226,6 +227,13 @@ public class CrawlPipeline(
                 Model = cleanResult.TokenUsage.Model,
                 CreatedAt = DateTime.Now
             }, ct);
+        }
+
+        // Fetch robots.txt for the target origin using the known tier
+        if (cleanResult.Metadata is not null)
+        {
+            var useProxy = tier is FetchTier.HttpClientProxy or FetchTier.CloakBrowserProxy;
+            cleanResult.Metadata.RobotsTxt = await robotsTxtService.FetchAsync(request.Url, useProxy, ct);
         }
 
         var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);

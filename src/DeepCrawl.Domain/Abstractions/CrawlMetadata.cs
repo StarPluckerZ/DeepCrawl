@@ -7,6 +7,7 @@ public class CrawlMetadata
     public string? Language { get; set; }
     public string? Keywords { get; set; }
     public string? Robots { get; set; }
+    public string? RobotsTxt { get; set; }
     public string? OgTitle { get; set; }
     public string? OgDescription { get; set; }
     public string? OgUrl { get; set; }
