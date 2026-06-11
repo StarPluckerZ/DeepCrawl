@@ -144,6 +144,17 @@ public static class ServiceCollectionExtensions
 
         // UBlacklist
         var uBlacklistOpts = configuration.GetSection("Search:UBlacklist").Get<UBlacklistOptions>() ?? new UBlacklistOptions();
+
+        var file = Path.Combine(AppContext.BaseDirectory, "UBlacklistSubscription.txt");
+        if (File.Exists(file))
+        {
+            var fileUrls = File.ReadAllLines(file)
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 0 && !l.StartsWith('#'));
+            uBlacklistOpts.SubscriptionUrls.AddRange(fileUrls);
+        }
+        uBlacklistOpts.SubscriptionUrls = uBlacklistOpts.SubscriptionUrls.Distinct().ToList();
+
         services.AddSingleton(uBlacklistOpts);
 
         services.AddHttpClient("UBlacklist", c =>
