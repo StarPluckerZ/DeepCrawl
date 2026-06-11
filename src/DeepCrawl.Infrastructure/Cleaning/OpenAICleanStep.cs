@@ -32,7 +32,7 @@ public class OpenAICleanStep : ICleanStep
         }
 
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
-        await using var handle = await _redis.GetLock($"AIClean:{hash}").AcquireAsync(TimeSpan.FromSeconds(30), ct);
+        await using var handle = await _redis.GetLock($"AIClean:{hash}").AcquireAsync(TimeSpan.FromSeconds(120), ct);
 
         try
         {

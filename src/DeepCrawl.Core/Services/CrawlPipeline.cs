@@ -50,7 +50,7 @@ public class CrawlPipeline(
         logger.LogInformation("Scrape requested for {Url}", request.Url);
 
         var formats = request.Formats ?? new List<string> { "markdown" };
-        var useAi = crawlConfig.AiConfigured;
+        var useAi = crawlConfig.AiConfigured && !request.SkipAiClean;
         var context = new CleanContext
         {
             Url = request.Url,
@@ -137,19 +137,28 @@ public class CrawlPipeline(
             sameHash.StabilityCount++;
             sameHash.LastAccessedAt = DateTime.Now;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
-            logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
 
-            var cachedMd = useAi
-                ? (sameHash.CleanedMarkdown ?? sameHash.MarkdownContent)
-                : sameHash.MarkdownContent;
+            // If user wants AI but only raw markdown is cached (e.g. from pre-crawl),
+            // fall through to the clean pipeline instead of returning raw content.
+            if (useAi && sameHash.CleanedMarkdown is null)
+            {
+                logger.LogInformation("Hash match for {Url} but AI cleaning pending, re-cleaning", request.Url);
+            }
+            else
+            {
+                logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
+                var cachedMd = useAi
+                    ? sameHash.CleanedMarkdown!
+                    : sameHash.MarkdownContent;
 
-            var cachedMetadata = sameHash.MetadataJson is not null
-                ? JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
-                : null;
+                var cachedMetadata = sameHash.MetadataJson is not null
+                    ? JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
+                    : null;
 
-            var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType);
-            await redisClient.SetAsync(GetCacheKey(contextHash, ComputeTtl(sameHash.StabilityCount)), cacheResponse, ct);
-            return cacheResponse;
+                var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType);
+                await redisClient.SetAsync(GetCacheKey(contextHash, ComputeTtl(sameHash.StabilityCount)), cacheResponse, ct);
+                return cacheResponse;
+            }
         }
 
         context.StatusCode = statusCode;
