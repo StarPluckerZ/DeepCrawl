@@ -20,7 +20,6 @@ public class CloakBrowserClient : ICloakBrowserClient
     public CloakBrowserClient(HttpClient http, IOptions<CloakBrowserClientOptions> options, ILogger<CloakBrowserClient> logger)
     {
         _http = http;
-        _http.BaseAddress = new Uri(options.Value.BaseUrl);
         _logger = logger;
     }
 

@@ -86,7 +86,7 @@ public class RedisClient : IRedisClient
         if (keys.Length == 0) return [];
         var redisKeys = keys.Select(k => (RedisKey)FullKey(k)).ToArray();
         var values = _db.StringGet(redisKeys);
-        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>(v.ToString()) : default).ToArray();
+        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>((string?)v) : default).ToArray();
     }
 
     public async Task<T?[]> GetManyAsync<T>(CacheKey[] keys, CancellationToken ct = default)
@@ -94,7 +94,7 @@ public class RedisClient : IRedisClient
         if (keys.Length == 0) return [];
         var redisKeys = keys.Select(k => (RedisKey)FullKey(k)).ToArray();
         var values = await _db.StringGetAsync(redisKeys).WaitAsync(ct);
-        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>(v.ToString()) : default).ToArray();
+        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>((string?)v) : default).ToArray();
     }
 
     public void SetMany<T>(KeyValuePair<CacheKey, T>[] entries)

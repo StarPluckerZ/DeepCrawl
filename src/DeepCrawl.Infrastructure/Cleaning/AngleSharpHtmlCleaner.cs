@@ -13,7 +13,7 @@ public class AngleSharpHtmlCleaner : IHtmlCleaner
         "script", "style", "nav", "footer", "header", "aside", "noscript",
         "iframe", "form", "img", "video", "audio", "svg", "canvas",
         "input", "button", "select", "textarea", "fieldset", "figure",
-        "picture", "source", "map", "area", "img"
+        "picture", "source", "map", "area"
     ];
 
     private static readonly string[] RemoveAttributes =

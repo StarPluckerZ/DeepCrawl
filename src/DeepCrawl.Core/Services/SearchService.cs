@@ -60,6 +60,7 @@ public class SearchService(
             Query = request.Query,
             Count = Math.Min(request.Limit ?? 10, options.MaxResultCount),
             Freshness = freshness,
+            Summary = request.Summary,
             Include = include,
             Exclude = exclude
         };

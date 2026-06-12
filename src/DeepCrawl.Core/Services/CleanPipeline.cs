@@ -32,6 +32,7 @@ public class CleanPipeline
             var result = await step.CleanAsync(input, context, ct);
             input = result.Output;
             aiCleaned = aiCleaned || result.AiCleaned;
+            if (string.IsNullOrWhiteSpace(input)) break;
         }
 
         cleanedHtml = input;
@@ -44,6 +45,7 @@ public class CleanPipeline
             aiCleaned = aiCleaned || result.AiCleaned;
             tokenUsage ??= result.TokenUsage;
             contentHash ??= result.ContentHash;
+            if (string.IsNullOrWhiteSpace(input)) break;
         }
 
         return new CleanResult

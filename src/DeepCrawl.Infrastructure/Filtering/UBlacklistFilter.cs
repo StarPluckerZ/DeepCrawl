@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Models;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace DeepCrawl.Infrastructure.Filtering;
 
@@ -32,6 +33,7 @@ public partial class UBlacklistFilter : IUrlFilter
     private volatile Regex[]? _regexCache;
 
     private readonly object _cacheLock = new();
+    private static readonly RedisChannel InvalidateChannel = new("UBlacklist:CacheInvalidated", RedisChannel.PatternMode.Literal);
 
     [GeneratedRegex(@"^\*://\*\.([^/]+)/\*$")]
     private static partial Regex WildcardPattern();
@@ -55,6 +57,16 @@ public partial class UBlacklistFilter : IUrlFilter
         _redis = redis;
         _options = options;
         _logger = logger;
+
+        // Subscribe to cross-instance cache invalidation
+        redis.Database.Multiplexer.GetSubscriber().Subscribe(InvalidateChannel, (_, _) =>
+        {
+            lock (_cacheLock)
+            {
+                _pathRuleCache = null;
+                _regexCache = null;
+            }
+        });
     }
 
     public async Task LoadRulesAsync(CancellationToken ct = default)
@@ -156,6 +168,9 @@ public partial class UBlacklistFilter : IUrlFilter
             _pathRuleCache = null;
             _regexCache = null;
         }
+
+        // Notify other instances to invalidate their in-memory caches
+        await _redis.Database.Multiplexer.GetSubscriber().PublishAsync(InvalidateChannel, "");
 
         _logger.LogInformation(
             "UBlacklist loaded: {Domains} domains, {Exact} exact, {Paths} path rules, {Regex} regex, {Whitelisted} whitelisted",

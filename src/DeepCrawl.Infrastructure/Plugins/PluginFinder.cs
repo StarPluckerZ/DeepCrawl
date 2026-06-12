@@ -35,15 +35,35 @@ public class PluginFinder
         {
             Assembly assembly;
                 try { assembly = Assembly.LoadFrom(dllPath); }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DeepCrawl] Failed to load plugin assembly: {dllPath} — {ex.Message}");
+                    continue;
+                }
 
             Type[] types;
             try { types = assembly.GetTypes(); }
             catch (ReflectionTypeLoadException ex)
-            { types = ex.Types.Where(t => t is not null).ToArray()!; }
-            catch (TypeLoadException) { continue; }
-            catch (FileLoadException) { continue; }
-            catch (BadImageFormatException) { continue; }
+            {
+                foreach (var le in ex.LoaderExceptions ?? [])
+                    Console.WriteLine($"[DeepCrawl] Type load error in {dllPath}: {le?.Message}");
+                types = ex.Types.Where(t => t is not null).ToArray()!;
+            }
+            catch (TypeLoadException ex)
+            {
+                Console.WriteLine($"[DeepCrawl] Type load exception for {dllPath}: {ex.Message}");
+                continue;
+            }
+            catch (FileLoadException ex)
+            {
+                Console.WriteLine($"[DeepCrawl] File load exception for {dllPath}: {ex.Message}");
+                continue;
+            }
+            catch (BadImageFormatException ex)
+            {
+                Console.WriteLine($"[DeepCrawl] Bad image format for {dllPath}: {ex.Message}");
+                continue;
+            }
 
             foreach (var type in types)
             {
@@ -52,7 +72,11 @@ public class PluginFinder
 
                 IPlugin instance;
                 try { instance = (IPlugin)Activator.CreateInstance(type)!; }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DeepCrawl] Failed to instantiate plugin {type.Name} from {dllPath}: {ex.Message}");
+                    continue;
+                }
                 yield return instance;
             }
         }

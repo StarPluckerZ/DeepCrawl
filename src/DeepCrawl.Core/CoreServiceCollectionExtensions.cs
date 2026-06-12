@@ -13,7 +13,7 @@ public static class CoreServiceCollectionExtensions
         services.TryAddScoped<ICrawlPipeline, CrawlPipeline>();
 
         var cacheStr = configuration["Search:CacheMinutes"] ?? "60";
-        var searchOpts = new SearchServiceOptions { CacheMinutes = int.Parse(cacheStr) };
+        var searchOpts = new SearchServiceOptions { CacheMinutes = int.TryParse(cacheStr, out var cm) ? cm : 60 };
         services.AddSingleton(searchOpts);
         services.TryAddScoped<ISearchService, SearchService>();
 

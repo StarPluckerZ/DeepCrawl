@@ -23,6 +23,8 @@ public record SearchRequest
 
     public List<string>? ExcludeDomains { get; init; }
 
+    public bool Summary { get; init; }
+
     [Range(1000, 300000)]
     public int? Timeout { get; init; } = 60000;
 }

@@ -21,7 +21,6 @@ public class CrawlPipeline(
     IRobotsTxtService robotsTxtService,
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
-    private static readonly Random TtlRandom = new();
     private static readonly CacheKey CacheHitQueueKey = new("Stats", "CacheHitQueue");
 
     private CacheKey GetCacheKey(string contextHash, TimeSpan ttl)
@@ -41,7 +40,7 @@ public class CrawlPipeline(
             raw = atThreshold * Math.Pow(2, n - threshold);
         }
         raw = Math.Min(raw, crawlConfig.CacheMaxMinutes);
-        var factor = 0.85 + TtlRandom.NextDouble() * 0.30;
+        var factor = 0.85 + Random.Shared.NextDouble() * 0.30;
         return TimeSpan.FromMinutes(raw * factor);
     }
 
