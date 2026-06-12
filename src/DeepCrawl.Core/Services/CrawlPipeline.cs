@@ -22,6 +22,7 @@ public class CrawlPipeline(
     ILogger<CrawlPipeline> logger) : ICrawlPipeline
 {
     private static readonly Random TtlRandom = new();
+    private static readonly CacheKey CacheHitQueueKey = new("Stats", "CacheHitQueue");
 
     private CacheKey GetCacheKey(string contextHash, TimeSpan ttl)
         => new CacheKey("Crawl", contextHash, ttl);
@@ -65,6 +66,8 @@ public class CrawlPipeline(
         if (cached is not null)
         {
             logger.LogInformation("Redis cache hit for {Url}", request.Url);
+            if (useAi)
+                await redisClient.ListRightPushAsync(CacheHitQueueKey, request.Url, ct);
             return cached;
         }
 
@@ -76,6 +79,8 @@ public class CrawlPipeline(
         if (cached is not null)
         {
             logger.LogInformation("Redis cache hit after lock for {Url}", request.Url);
+            if (useAi)
+                await redisClient.ListRightPushAsync(CacheHitQueueKey, request.Url, ct);
             return cached;
         }
 
@@ -148,6 +153,8 @@ public class CrawlPipeline(
             else
             {
                 logger.LogInformation("Hash match, returning cached result for {Url}", request.Url);
+                if (useAi)
+                    await redisClient.ListRightPushAsync(CacheHitQueueKey, request.Url, ct);
                 var cachedMd = useAi
                     ? sameHash.CleanedMarkdown!
                     : sameHash.MarkdownContent;
@@ -218,6 +225,8 @@ public class CrawlPipeline(
             await crawlStatisticRepo.InsertAsync(new CrawlStatistic
             {
                 CrawlRecordId = recordId,
+                ContentHash = cleanResult.ContentHash,
+                CacheHitCount = 0,
                 PromptTokens = cleanResult.TokenUsage.PromptTokens,
                 CompletionTokens = cleanResult.TokenUsage.CompletionTokens,
                 TotalTokens = cleanResult.TokenUsage.TotalTokens,
@@ -270,4 +279,5 @@ public class CrawlPipeline(
             return uri.Host.ToLowerInvariant();
         return null;
     }
+
 }

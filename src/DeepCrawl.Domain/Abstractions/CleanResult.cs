@@ -9,4 +9,5 @@ public class CleanResult
     public bool AiCleaned { get; init; }
     public CrawlMetadata? Metadata { get; init; }
     public AiTokenUsage? TokenUsage { get; init; }
+    public string? ContentHash { get; init; }
 }

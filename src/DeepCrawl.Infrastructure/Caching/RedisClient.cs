@@ -196,4 +196,17 @@ public class RedisClient : IRedisClient
     {
         await _db.KeyRenameAsync(FullKey(key), FullKey(newKey)).WaitAsync(ct);
     }
+
+    public async Task<long> ListRightPushAsync<T>(CacheKey key, T value, CancellationToken ct = default)
+    {
+        var json = RedisSerializer.Serialize(value);
+        return await _db.ListRightPushAsync(FullKey(key), json).WaitAsync(ct);
+    }
+
+    public async Task<T?[]> ListLeftPopAsync<T>(CacheKey key, long count, CancellationToken ct = default)
+    {
+        var values = await _db.ListLeftPopAsync(FullKey(key), count).WaitAsync(ct);
+        if (values is not { Length: > 0 }) return [];
+        return values.Select(v => v.HasValue ? RedisSerializer.Deserialize<T>(v.ToString()) : default).ToArray();
+    }
 }

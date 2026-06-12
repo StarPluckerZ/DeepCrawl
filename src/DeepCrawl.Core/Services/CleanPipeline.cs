@@ -1,5 +1,6 @@
 using DeepCrawl.Domain.Abstractions;
 using DeepCrawl.Domain.Enums;
+using DeepCrawl.Domain.Models;
 using Microsoft.Extensions.Logging;
 
 namespace DeepCrawl.Core.Services;
@@ -22,6 +23,8 @@ public class CleanPipeline
 
         var aiCleaned = false;
         string? cleanedHtml = null;
+        AiTokenUsage? tokenUsage = null;
+        string? contentHash = null;
 
         foreach (var step in htmlSteps)
         {
@@ -39,6 +42,8 @@ public class CleanPipeline
             var result = await step.CleanAsync(input, context, ct);
             input = result.Output;
             aiCleaned = aiCleaned || result.AiCleaned;
+            tokenUsage ??= result.TokenUsage;
+            contentHash ??= result.ContentHash;
         }
 
         return new CleanResult
@@ -46,7 +51,9 @@ public class CleanPipeline
             Output = input,
             CleanedHtml = cleanedHtml,
             AiCleaned = aiCleaned,
-            Metadata = context.Metadata
+            Metadata = context.Metadata,
+            TokenUsage = tokenUsage,
+            ContentHash = contentHash
         };
     }
 }

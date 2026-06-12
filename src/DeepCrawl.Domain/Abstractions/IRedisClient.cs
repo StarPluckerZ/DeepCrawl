@@ -43,4 +43,7 @@ public interface IRedisClient
 
     Task KeyExpireAsync(CacheKey key, TimeSpan expiry, CancellationToken ct = default);
     Task RenameKeyAsync(CacheKey key, CacheKey newKey, CancellationToken ct = default);
+
+    Task<long> ListRightPushAsync<T>(CacheKey key, T value, CancellationToken ct = default);
+    Task<T?[]> ListLeftPopAsync<T>(CacheKey key, long count, CancellationToken ct = default);
 }

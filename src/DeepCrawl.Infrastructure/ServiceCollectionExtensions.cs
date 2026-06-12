@@ -11,6 +11,7 @@ using DeepCrawl.Infrastructure.Caching;
 using DeepCrawl.Infrastructure.Clients;
 using DeepCrawl.Infrastructure.Filtering;
 using DeepCrawl.Infrastructure.Search;
+using DeepCrawl.Infrastructure.Stats;
 using DeepSeekSDK;
 using FreeSql;
 using FreeSql.DataAnnotations;
@@ -47,9 +48,15 @@ public static class ServiceCollectionExtensions
             .Build();
 
         var entityTypes = typeof(CrawlRecord).Assembly.GetTypes()
-            .Where(t => Attribute.IsDefined(t, typeof(TableAttribute)));
+            .Where(t => Attribute.IsDefined(t, typeof(TableAttribute)))
+            .ToArray();
         foreach (var type in entityTypes)
             fsql.CodeFirst.ConfigEntity(type, _ => { });
+
+        // Force sync all discovered tables at startup (lazy AutoSyncStructure
+        // only syncs a table on first access, so CrawlStatistic would never
+        // be created unless AI cleaning actually ran).
+        fsql.CodeFirst.SyncStructure(entityTypes);
 
         services.AddSingleton<IFreeSql>(fsql);
         services.AddFreeRepository();
@@ -166,6 +173,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<UBlacklistFilter>();
         services.TryAddSingleton<IUrlFilter>(sp => sp.GetRequiredService<UBlacklistFilter>());
         services.AddHostedService<UBlacklistUpdateService>();
+
+        // Cache hit counting
+        services.AddHostedService<CacheHitFlushService>();
 
         // Search provider
         var bochaApiKey = Environment.GetEnvironmentVariable("BOCHA_API_KEY")

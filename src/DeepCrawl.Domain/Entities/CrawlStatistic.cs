@@ -13,6 +13,11 @@ public class CrawlStatistic
     [Navigate(nameof(CrawlRecordId))]
     public CrawlRecord? Record { get; set; }
 
+    [Column(StringLength = 64)]
+    public string? ContentHash { get; set; }
+
+    public int CacheHitCount { get; set; }
+
     public int? PromptTokens { get; set; }
     public int? CompletionTokens { get; set; }
     public int? TotalTokens { get; set; }
