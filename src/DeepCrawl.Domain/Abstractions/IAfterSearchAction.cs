@@ -1,6 +1,6 @@
 namespace DeepCrawl.Domain.Abstractions;
 
-public enum AfterActionReliability
+public enum ActionReliability
 {
     /// <summary>Fire-and-forget: does not block the search response. Errors are logged but not propagated.</summary>
     BestEffort = 0,
@@ -11,7 +11,7 @@ public enum AfterActionReliability
 
 public interface IAfterSearchAction
 {
-    AfterActionReliability Reliability { get; }
+    ActionReliability Reliability { get; }
 
     Task ExecuteAsync(SearchContext context, CancellationToken ct = default);
 }

@@ -87,7 +87,7 @@ public class SearchService(
         var context = new SearchContext { Query = query, RawResults = rawResults };
         foreach (var action in afterActions)
         {
-            if (action.Reliability == AfterActionReliability.BestEffort)
+            if (action.Reliability == ActionReliability.BestEffort)
             {
                 var captured = action;
                 _ = Task.Run(async () =>
