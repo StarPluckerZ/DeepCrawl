@@ -110,16 +110,17 @@ public class CrawlPipeline(
         if (!success)
         {
             await domainReporter.RecordFailureAsync(request.Url, ct);
-            await crawlRecordRepo.InsertAsync(new CrawlRecord
+            var failedRecord = new CrawlRecord
             {
                 Url = request.Url,
                 Status = CrawlStatus.Failed,
                 FetchTier = tier,
                 ErrorMessage = fetchError ?? "All fetch tiers failed",
-                CompletedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
-            }, ct);
-            return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed" };
+                CompletedAt = DateTime.UtcNow,
+                LastAccessedAt = DateTime.UtcNow
+            };
+            await crawlRecordRepo.InsertAsync(failedRecord, ct);
+            return new ScrapeResponse { Success = false, Error = fetchError ?? "All fetch tiers failed", CrawlRecordId = failedRecord.Id };
         }
 
         int? statusCode = 200;
@@ -140,7 +141,7 @@ public class CrawlPipeline(
         {
             sameHash.FetchTier = tier;
             sameHash.StabilityCount++;
-            sameHash.LastAccessedAt = DateTime.Now;
+            sameHash.LastAccessedAt = DateTime.UtcNow;
             await crawlRecordRepo.UpdateAsync(sameHash, ct);
 
             // If user wants AI but only raw markdown is cached (e.g. from pre-crawl),
@@ -162,7 +163,8 @@ public class CrawlPipeline(
                     ? JsonSerializer.Deserialize<CrawlMetadata>(sameHash.MetadataJson)
                     : null;
 
-                var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType);
+                var cacheResponse = BuildResponse(formats, cachedMd, sameHash.CleanedHtml, cachedMetadata, request.Url, statusCode, contentType)
+                    with { CrawlRecordId = sameHash.Id };
                 await redisClient.SetAsync(GetCacheKey(contextHash, ComputeTtl(sameHash.StabilityCount)), cacheResponse, ct);
                 return cacheResponse;
             }
@@ -191,8 +193,8 @@ public class CrawlPipeline(
                 ? JsonSerializer.Serialize(cleanResult.Metadata)
                 : null;
             existing.Status = CrawlStatus.Completed;
-            existing.CompletedAt = DateTime.Now;
-            existing.LastAccessedAt = DateTime.Now;
+            existing.CompletedAt = DateTime.UtcNow;
+            existing.LastAccessedAt = DateTime.UtcNow;
             await crawlRecordRepo.UpdateAsync(existing, ct);
             recordId = existing.Id;
         }
@@ -212,8 +214,8 @@ public class CrawlPipeline(
                 Status = CrawlStatus.Completed,
                 FetchTier = tier,
                 StabilityCount = 1,
-                CompletedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
+                CompletedAt = DateTime.UtcNow,
+                LastAccessedAt = DateTime.UtcNow
             };
             await crawlRecordRepo.InsertAsync(record, ct);
             recordId = record.Id;
@@ -233,7 +235,7 @@ public class CrawlPipeline(
                 CacheHitTokens = cleanResult.TokenUsage.CacheHitTokens,
                 CacheMissTokens = cleanResult.TokenUsage.CacheMissTokens,
                 Model = cleanResult.TokenUsage.Model,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.UtcNow
             }, ct);
         }
 
@@ -244,7 +246,8 @@ public class CrawlPipeline(
             cleanResult.Metadata.RobotsTxt = await robotsTxtService.FetchAsync(request.Url, useProxy, ct);
         }
 
-        var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType);
+        var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType)
+            with { CrawlRecordId = recordId };
         var finalTtl = ComputeTtl(existing?.StabilityCount ?? 1);
         await redisClient.SetAsync(GetCacheKey(contextHash, finalTtl), response, ct);
         await domainReporter.RecordSuccessAsync(request.Url, ct);

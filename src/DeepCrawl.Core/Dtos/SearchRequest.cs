@@ -1,14 +1,9 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace DeepCrawl.Core.Dtos;
 
 public record SearchRequest
 {
-    [Required]
-    [StringLength(500)]
     public string Query { get; init; } = null!;
 
-    [Range(1, 100)]
     public int? Limit { get; init; } = 10;
 
     public List<string>? Sources { get; init; }
@@ -25,6 +20,5 @@ public record SearchRequest
 
     public bool Summary { get; init; }
 
-    [Range(1000, 300000)]
     public int? Timeout { get; init; } = 60000;
 }

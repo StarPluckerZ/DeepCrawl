@@ -16,6 +16,7 @@
     <!-- Code Analysis -->
     <PackageVersion Include="AngleSharp" Version="1.4.0" />
     <PackageVersion Include="ReverseMarkdown" Version="5.3.0" />
+    <PackageVersion Include="FluentValidation" Version="11.11.0" />
 
     <!-- ORM -->
     <PackageVersion Include="Npgsql" Version="9.0.4" />

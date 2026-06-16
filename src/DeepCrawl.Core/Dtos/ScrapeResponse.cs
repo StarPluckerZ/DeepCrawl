@@ -8,6 +8,7 @@ public record ScrapeResponse
     public ScrapeData? Data { get; init; }
     public string? Error { get; init; }
     public DateTimeOffset? BlockedUntil { get; init; }
+    public long? CrawlRecordId { get; init; }
 }
 
 public record ScrapeData
