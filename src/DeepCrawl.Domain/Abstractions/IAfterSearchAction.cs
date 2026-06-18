@@ -11,6 +11,9 @@ public enum ActionReliability
 
 public interface IAfterSearchAction
 {
+    /// <summary>Execution order within the AfterSearch pipeline. Lower values run first. Default 0.</summary>
+    int Order => 0;
+
     ActionReliability Reliability { get; }
 
     Task ExecuteAsync(SearchContext context, CancellationToken ct = default);

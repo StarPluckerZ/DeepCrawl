@@ -85,7 +85,7 @@ public class SearchService(
     private async Task ExecuteAfterActions(string query, List<SearchProviderResult> rawResults, CancellationToken ct)
     {
         var context = new SearchContext { Query = query, RawResults = rawResults };
-        foreach (var action in afterActions)
+        foreach (var action in afterActions.OrderBy(a => a.Order))
         {
             if (action.Reliability == ActionReliability.BestEffort)
             {
