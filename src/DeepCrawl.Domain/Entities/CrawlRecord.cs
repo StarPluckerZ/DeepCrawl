@@ -44,8 +44,8 @@ public class CrawlRecord
 
     public int StabilityCount { get; set; }
 
-    [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
-    public DateTime CreatedAt { get; set; } 
+    [Column(CanUpdate = false, ServerTime = DateTimeKind.Utc, DbType = "timestamptz")]
+    public DateTime CreatedAt { get; set; }
     
     
     [Column(DbType = "timestamptz")]

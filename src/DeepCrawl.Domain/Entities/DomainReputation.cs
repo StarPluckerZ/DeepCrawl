@@ -14,12 +14,19 @@ public class DomainReputation
 
     public int ConsecutiveFailures { get; set; }
     public int TotalFailures { get; set; }
+
+    [Column(DbType = "timestamptz")]
     public DateTime? BlockedUntil { get; set; }
+
+    [Column(DbType = "timestamptz")]
     public DateTime LastFailureAt { get; set; }
+
+    [Column(DbType = "timestamptz")]
     public DateTime? LastSuccessAt { get; set; }
 
-    [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
+    [Column(CanUpdate = false, ServerTime = DateTimeKind.Utc, DbType = "timestamptz")]
     public DateTime CreatedAt { get; set; }
 
+    [Column(DbType = "timestamptz")]
     public DateTime UpdatedAt { get; set; }
 }
