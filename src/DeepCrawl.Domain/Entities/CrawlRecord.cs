@@ -48,8 +48,10 @@ public class CrawlRecord
     public DateTime CreatedAt { get; set; } 
     
     
+    [Column(DbType = "timestamptz")]
     public DateTime? CompletedAt { get; set; }
-    
+
+    [Column(DbType = "timestamptz")]
     public DateTime LastAccessedAt { get; set; }
 
     [Navigate(nameof(CrawlStatistic.CrawlRecordId))]

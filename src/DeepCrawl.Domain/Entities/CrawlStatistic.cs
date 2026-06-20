@@ -28,6 +28,6 @@ public class CrawlStatistic
     [Column(StringLength = 64)]
     public string? Model { get; set; }
     
-    [Column(CanUpdate = false, ServerTime = DateTimeKind.Local)]
+    [Column(CanUpdate = false, ServerTime = DateTimeKind.Utc, DbType = "timestamptz")]
     public DateTime CreatedAt { get; set; }
 }
