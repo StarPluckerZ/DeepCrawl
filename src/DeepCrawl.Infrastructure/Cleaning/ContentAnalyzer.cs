@@ -8,7 +8,7 @@ public class ContentAnalyzer : IContentAnalyzer
     public int GetTextLength(string rawHtml)
     {
         var parser = new HtmlParser();
-        var doc = parser.ParseDocument(rawHtml);
+        using var doc = parser.ParseDocument(rawHtml);
         if (doc.Body is null) return 0;
 
         var hasJsRequired = doc.Body.TextContent.Trim().StartsWith("You need to enable JavaScript")
