@@ -9,7 +9,7 @@ namespace DeepCrawl.Infrastructure.Cleaning;
 /// Collapses multiple spaces and trailing whitespace within lines.
 /// Runs after ReverseMarkdown conversion, before AI cleaning.
 /// </summary>
-internal sealed partial class WhitespaceNormalizeStep : ICleanStep
+public sealed partial class WhitespaceNormalizeStep : ICleanStep
 {
     public CleanStage Stage => CleanStage.Markdown;
     public int Order => 15; // after ReverseMarkdownStep (10), before OpenAICleanStep (20)
