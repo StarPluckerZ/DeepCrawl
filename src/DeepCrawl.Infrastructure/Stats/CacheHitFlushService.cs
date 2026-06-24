@@ -44,7 +44,8 @@ public class CacheHitFlushService(
                 await Task.Delay(FlushInterval, stoppingToken);
                 // Atomically pop up to PopBatchSize URLs from the queue
                 var items = await redis.ListLeftPopAsync<string>(QueueKey, PopBatchSize, stoppingToken);
-                if (items is not { Length: > 0 }) return;
+                if (items is not { Length: > 0 }) 
+                    continue;
 
                 logger.LogDebug("CacheHitFlush: popped {Count} cache-hit URLs", items.Length);
 
