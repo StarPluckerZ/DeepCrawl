@@ -19,11 +19,6 @@
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
 
     <!-- ORM -->
-    <!-- Npgsql version is NOT pinned — let FreeSql.Provider.PostgreSQL
-         (needs >= 5.0.18) and HealthChecks.NpgSql (needs >= 8.0.3)
-         resolve automatically via NuGet. Explicitly pinning Npgsql 9.x
-         may cause native buffer management issues under high-frequency
-         DB operations (CreditSyncBackgroundService). -->
     <PackageVersion Include="FreeSql" Version="3.5.309" />
     <PackageVersion Include="FreeSql.Provider.PostgreSQL" Version="3.5.309" />
     <PackageVersion Include="FreeSql.DbContext" Version="3.5.309" />
