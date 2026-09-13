@@ -19,6 +19,9 @@ FROM build AS publish
 RUN dotnet publish "DeepCrawl.Api.csproj" -c Release -o /app/publish
 
 FROM base AS final
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=publish /app/publish .
 RUN mkdir /app/logs
