@@ -8,6 +8,9 @@ public class ApiToken
     [Column(IsPrimary = true, IsIdentity = true)]
     public long Id { get; set; }
 
+    [Column(StringLength = 128)]
+    public string? Name { get; set; }
+
     [Column(DbType = "varchar(128)", IsNullable = false)]
     public string Token { get; set; } = null!;
 

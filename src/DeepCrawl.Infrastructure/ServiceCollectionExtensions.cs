@@ -1,30 +1,16 @@
-using System.Net;
-using System.Security.Cryptography;
-using DeepCrawl.Core.Services;
-using DeepCrawl.Domain.Abstractions;
-using DeepCrawl.Domain.Entities;
 using DeepCrawl.Domain.Models;
-using DeepCrawl.Infrastructure.AI;
-using DeepCrawl.Infrastructure.Auth;
-using DeepCrawl.Infrastructure.Cleaning;
-using DeepCrawl.Infrastructure.Caching;
-using DeepCrawl.Infrastructure.Clients;
-using DeepCrawl.Infrastructure.Filtering;
-using DeepCrawl.Infrastructure.Search;
-using DeepCrawl.Infrastructure.Stats;
-using DeepSeekSDK;
-using FreeSql;
-using FreeSql.DataAnnotations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Polly;
-using Polly.Extensions.Http;
-using StackExchange.Redis;
 
 namespace DeepCrawl.Infrastructure;
 
-public static class ServiceCollectionExtensions
+/// <summary>
+/// Composition root for all DeepCrawl infrastructure services.
+/// Each concern (data stores, fetchers, cleaning, filtering, search) lives in
+/// its own partial file; this entry point resolves shared options and wires
+/// them together.
+/// </summary>
+public static partial class ServiceCollectionExtensions
 {
     public static IServiceCollection AddDeepCrawlInfra(
         this IServiceCollection services, IConfiguration configuration)
@@ -34,166 +20,32 @@ public static class ServiceCollectionExtensions
         crawlConfig.AiConfigured = !string.IsNullOrWhiteSpace(configuration["AI:ApiKey"]);
         services.AddSingleton(crawlConfig);
 
-        // Redis
-        var redisOptions = configuration.GetSection("Redis").Get<RedisOptions>() ?? new RedisOptions();
-        services.AddSingleton(redisOptions);
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect($"{redisOptions.Host}:{redisOptions.Port},password={redisOptions.Password}"));
-        services.AddSingleton<IRedisClient, RedisClient>();
+        // Zhipu — search and web reader share the key; the reader tier is
+        // disabled when the key is missing (mirrors ProxyConfigured)
+        var zhipuOptions = ResolveZhipuOptions(configuration);
+        crawlConfig.ZhipuReaderConfigured = !string.IsNullOrWhiteSpace(zhipuOptions.ApiKey);
+        services.AddSingleton(zhipuOptions);
 
-        // PostgreSQL + FreeSql
-        var fsql = new FreeSqlBuilder()
-            .UseConnectionString(DataType.PostgreSQL, configuration.GetConnectionString("PostgreSQL"))
-            .UseAutoSyncStructure(true)
-            .Build();
-
-        var entityTypes = typeof(CrawlRecord).Assembly.GetTypes()
-            .Where(t => Attribute.IsDefined(t, typeof(TableAttribute)))
-            .ToArray();
-        foreach (var type in entityTypes)
-            fsql.CodeFirst.ConfigEntity(type, _ => { });
-
-        // Force sync all discovered tables at startup (lazy AutoSyncStructure
-        // only syncs a table on first access, so CrawlStatistic would never
-        // be created unless AI cleaning actually ran).
-        fsql.CodeFirst.SyncStructure(entityTypes);
-
-        services.AddSingleton<IFreeSql>(fsql);
-        services.AddFreeRepository();
-
-        // Generate API token if none exist
-        var tokenCount = fsql.Select<ApiToken>().Count();
-        if (tokenCount == 0)
-        {
-            var tokenBytes = RandomNumberGenerator.GetBytes(32);
-            var token = "sk-" + Convert.ToHexStringLower(tokenBytes);
-            fsql.Insert(new ApiToken { Token = token, IsActive = true }).ExecuteAffrows();
-            Console.WriteLine($"[DeepCrawl] API token generated: {token}");
-        }
-
-        // CloakBrowser
-        services.Configure<CloakBrowserClientOptions>(configuration.GetSection("CloakBrowser"));
-        services.AddHttpClient<ICloakBrowserClient, CloakBrowserClient>(client =>
-        {
-            var baseUrl = configuration["CloakBrowser:BaseUrl"] ?? "http://localhost:8000";
-            client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(120);
-        })
-        .AddPolicyHandler(HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .WaitAndRetryAsync(1, _ => TimeSpan.FromSeconds(2)));
-
-        // Direct HTTP
-        services.AddHttpClient("Direct", c =>
-        {
-            if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
-                c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
-            c.Timeout = TimeSpan.FromSeconds(15);
-        })
-        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = true });
-
-        // Proxy HTTP
-        if (crawlConfig.ProxyConfigured)
-        {
-            services.AddHttpClient("ProxyFetcher", c =>
-            {
-                if (!string.IsNullOrWhiteSpace(crawlConfig.UserAgent))
-                    c.DefaultRequestHeaders.UserAgent.ParseAdd(crawlConfig.UserAgent);
-                c.Timeout = TimeSpan.FromSeconds(15);
-            })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-            {
-                AllowAutoRedirect = true,
-                Proxy = new WebProxy($"{crawlConfig.ProxyAddress}:{crawlConfig.ProxyPort}")
-                {
-                    Credentials = new NetworkCredential(crawlConfig.ProxyUsername, crawlConfig.ProxyPassword)
-                },
-                UseProxy = true
-            });
-        }
-
-        services.AddSingleton<IDirectHttpFetcher, DirectHttpFetcher>();
-        services.AddSingleton<TieredHttpFetcher>();
-
-        // AI
-        var endpoint = configuration["AI:BaseUrl"] ?? "https://api.siliconflow.cn/v1/chat/completions";
-        var apiKey = configuration["AI:ApiKey"] ?? "";
-        var model = configuration["AI:Model"] ?? "Qwen/Qwen3-8B";
-        if (string.IsNullOrWhiteSpace(apiKey))
-            Console.WriteLine("[WARN] AI:ApiKey is empty — AI cleaning will be skipped.");
-
-        services.AddSingleton(new AIMarkdownCleanerOptions
-        {
-            BaseUrl = endpoint, ApiKey = apiKey, Model = model,
-            ThinkingLevel = configuration["AI:ThinkingLevel"]
-        });
-        services.AddDeepSeekClient(apiKey, endpoint);
-
-        // Clean pipeline
-        services.AddSingleton<IContentAnalyzer, ContentAnalyzer>();
-        services.AddSingleton<IHtmlCleaner, AngleSharpHtmlCleaner>();
-        services.AddSingleton<IMarkdownConverter, ReverseMarkdownConverter>();
-        services.AddSingleton<IAIMarkdownCleaner, OpenAIMarkdownCleaner>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.MetadataExtractorStep>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.AngleSharpHtmlCleanerStep>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.StripDataUriStep>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.ReverseMarkdownStep>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.WhitespaceNormalizeStep>();
-        services.AddSingleton<ICleanStep, DeepCrawl.Infrastructure.Cleaning.OpenAICleanStep>();
-        services.AddSingleton<CleanPipeline>();
-        services.AddSingleton<IRobotsTxtService, RobotsTxtService>();
-        services.AddSingleton<ITokenValidator, TokenValidator>();
-
-        // Reputation
-        var reputationOpts = configuration.GetSection("Search:Reputation").Get<ReputationOptions>() ?? new ReputationOptions();
-        services.AddSingleton(reputationOpts);
-        services.AddScoped<DomainReputationService>();
-        services.TryAddScoped<IUrlFilter>(sp => sp.GetRequiredService<DomainReputationService>());
-        services.TryAddScoped<IDomainReporter>(sp => sp.GetRequiredService<DomainReputationService>());
-
-        // UBlacklist
-        var uBlacklistOpts = configuration.GetSection("Search:UBlacklist").Get<UBlacklistOptions>() ?? new UBlacklistOptions();
-
-        var file = Path.Combine(AppContext.BaseDirectory, "UBlacklistSubscription.txt");
-        if (File.Exists(file))
-        {
-            var fileUrls = File.ReadAllLines(file)
-                .Select(l => l.Trim())
-                .Where(l => l.Length > 0 && !l.StartsWith('#'));
-            uBlacklistOpts.SubscriptionUrls.AddRange(fileUrls);
-        }
-        uBlacklistOpts.SubscriptionUrls = uBlacklistOpts.SubscriptionUrls.Distinct().ToList();
-
-        services.AddSingleton(uBlacklistOpts);
-
-        services.AddHttpClient("UBlacklist", c =>
-        {
-            c.Timeout = TimeSpan.FromSeconds(60);
-            c.DefaultRequestHeaders.UserAgent.ParseAdd("DeepCrawl/1.0");
-        });
-        services.AddSingleton<UBlacklistFilter>();
-        services.TryAddSingleton<IUrlFilter>(sp => sp.GetRequiredService<UBlacklistFilter>());
-        services.AddHostedService<UBlacklistUpdateService>();
-
-        // Cache hit counting
-        services.AddHostedService<CacheHitFlushService>();
-
-        // Search provider
-        var bochaApiKey = Environment.GetEnvironmentVariable("BOCHA_API_KEY")
-                          ?? configuration["Search:Bocha:ApiKey"] ?? "";
-        if (string.IsNullOrWhiteSpace(bochaApiKey))
-            Console.WriteLine("[WARN] BOCHA_API_KEY env / Search:Bocha:ApiKey is empty — search will fail.");
-
-        var bochaBaseUrl = configuration["Search:Bocha:BaseUrl"] ?? "https://api.bocha.cn";
-        var bochaTimeout = configuration.GetValue<int?>("Search:Bocha:TimeoutSeconds") ?? 30;
-
-        services.AddHttpClient<ISearchProvider, BochaSearchProvider>(client =>
-        {
-            client.BaseAddress = new Uri(bochaBaseUrl);
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {bochaApiKey}");
-            client.Timeout = TimeSpan.FromSeconds(bochaTimeout);
-        });
+        services.AddDataStores(configuration);
+        services.AddFetchers(configuration, crawlConfig, zhipuOptions);
+        services.AddCleaning(configuration);
+        services.AddUrlFiltering(configuration);
+        services.AddSearchProviders(configuration, zhipuOptions);
 
         return services;
+    }
+
+    /// <summary>
+    /// Binds the "Zhipu" section, letting the ZHIPU_API_KEY environment variable
+    /// override the configured key (search and reader use the same credential).
+    /// </summary>
+    private static ZhipuOptions ResolveZhipuOptions(IConfiguration configuration)
+    {
+        var options = configuration.GetSection("Zhipu").Get<ZhipuOptions>() ?? new ZhipuOptions();
+        var apiKey = Environment.GetEnvironmentVariable("ZHIPU_API_KEY")
+                     ?? configuration["Zhipu:ApiKey"] ?? "";
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            options.ApiKey = apiKey;
+        return options;
     }
 }

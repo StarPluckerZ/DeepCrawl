@@ -104,7 +104,7 @@ public class CrawlPipeline(
             }
         }
 
-        var (success, tier, rawHtml, fetchError) = await tieredFetcher.FetchAsync(
+        var (success, tier, content, fetchError) = await tieredFetcher.FetchAsync(
             request.Url, request.WaitUntil, ct);
 
         if (!success)
@@ -124,15 +124,17 @@ public class CrawlPipeline(
         }
 
         int? statusCode = 200;
-        string contentType = "text/html";
+        // Zhipu reader tier returns markdown instead of HTML
+        var isMarkdownTier = tier == FetchTier.ZhipuReader;
+        string contentType = isMarkdownTier ? "text/markdown" : "text/html";
 
-        if (rawHtml is null)
+        if (content is null)
         {
             await domainReporter.RecordFailureAsync(request.Url, ct);
             return new ScrapeResponse { Success = false, Error = "Fetched content was empty" };
         }
 
-        var htmlHash = HtmlHashService.ComputeSha256(rawHtml);
+        var htmlHash = HtmlHashService.ComputeSha256(content);
 
         var sameHash = await crawlRecordRepo
             .Where(c => c.Url == request.Url && c.HtmlHash == htmlHash)
@@ -172,7 +174,21 @@ public class CrawlPipeline(
 
         context.StatusCode = statusCode;
         context.ContentType = contentType;
-        var cleanResult = await cleanPipeline.ExecuteAsync(rawHtml!, context, ct);
+
+        // MetadataExtractorStep (HTML stage) is skipped for markdown input — pre-seed so
+        // the robots.txt fetch below still runs
+        if (isMarkdownTier)
+            context.Metadata ??= new CrawlMetadata
+            {
+                SourceURL = request.Url,
+                StatusCode = statusCode,
+                ContentType = contentType
+            };
+
+        var cleanResult = await cleanPipeline.ExecuteAsync(content, context, ct);
+
+        // Do not let markdown masquerade as HTML in records or responses
+        var cleanedHtml = isMarkdownTier ? null : cleanResult.CleanedHtml;
 
         var existing = await crawlRecordRepo
             .Where(c => c.Url == request.Url)
@@ -188,7 +204,7 @@ public class CrawlPipeline(
             existing.ContextHash = contextHash;
             existing.MarkdownContent = cleanResult.Output;
             existing.CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null;
-            existing.CleanedHtml = cleanResult.CleanedHtml;
+            existing.CleanedHtml = cleanedHtml;
             existing.MetadataJson = cleanResult.Metadata is not null
                 ? JsonSerializer.Serialize(cleanResult.Metadata)
                 : null;
@@ -207,7 +223,7 @@ public class CrawlPipeline(
                 ContextHash = contextHash,
                 MarkdownContent = cleanResult.Output,
                 CleanedMarkdown = cleanResult.AiCleaned ? cleanResult.Output : null,
-                CleanedHtml = cleanResult.CleanedHtml,
+                CleanedHtml = cleanedHtml,
                 MetadataJson = cleanResult.Metadata is not null
                     ? JsonSerializer.Serialize(cleanResult.Metadata)
                     : null,
@@ -246,7 +262,7 @@ public class CrawlPipeline(
             cleanResult.Metadata.RobotsTxt = await robotsTxtService.FetchAsync(request.Url, useProxy, ct);
         }
 
-        var response = BuildResponse(formats, cleanResult.Output, cleanResult.CleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType)
+        var response = BuildResponse(formats, cleanResult.Output, cleanedHtml, cleanResult.Metadata, request.Url, statusCode, contentType)
             with { CrawlRecordId = recordId };
         var finalTtl = ComputeTtl(existing?.StabilityCount ?? 1);
         await redisClient.SetAsync(GetCacheKey(contextHash, finalTtl), response, ct);

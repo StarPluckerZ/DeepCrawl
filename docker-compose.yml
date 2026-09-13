@@ -63,6 +63,8 @@ services:
       AI__BaseUrl: ${AI_BASEURL}
       AI__ApiKey: ${AI_APIKEY}
       AI__Model: ${AI_MODEL}
+      Zhipu__ApiKey: ${ZHIPU_APIKEY}
+      Search__Provider: ${SEARCH_PROVIDER:-Zhipu}
       Crawl__MinTextLength: "200"
     volumes:
       - ./logs:/app/logs
@@ -73,6 +75,19 @@ services:
         condition: service_healthy
       cloak-service:
         condition: service_started
+
+  deepcrawl-cli:
+    profiles:
+      - cli
+    build:
+      context: .
+      dockerfile: src/DeepCrawl.CommandLineTools/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__PostgreSQL: Host=postgres;Database=deepcrawl;Username=deepcrawl;Password=${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

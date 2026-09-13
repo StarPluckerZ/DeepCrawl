@@ -66,11 +66,19 @@ jobs:
           docker push "$IMAGE:$TAG"
           docker push "$IMAGE:${BRANCH}-latest"
 
+      - name: Build & push CLI
+        run: |
+          IMAGE="$HARBOR_URL/deep_crawl/deepcrawl-cli"
+          TAG="${BRANCH}-$(git rev-parse --short HEAD)"
+          docker build -f src/DeepCrawl.CommandLineTools/Dockerfile -t "$IMAGE:$TAG" -t "$IMAGE:${BRANCH}-latest" .
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:${BRANCH}-latest"
+
       - name: Cleanup disk
         shell: bash {0}
         run: |
           docker builder prune --all --force || true
-          for IMG in "$HARBOR_URL/deep_crawl/deepcrawl-api" "$HARBOR_URL/deep_crawl/deepcrawl-cloak"; do
+          for IMG in "$HARBOR_URL/deep_crawl/deepcrawl-api" "$HARBOR_URL/deep_crawl/deepcrawl-cloak" "$HARBOR_URL/deep_crawl/deepcrawl-cli"; do
             docker images "$IMG" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
               | grep "^${IMG}:${BRANCH}-" | sort -r | tail -n +4 | xargs -r docker rmi || true
           done

@@ -10,12 +10,14 @@ DeepCrawl fetches any web page through anti-bot countermeasures (CloakBrowser), 
 
 ## Features
 
+- **Tiered fetching** — five-level cascade, cheapest first: Zhipu web reader (markdown) → HttpClient → HttpClient+proxy → CloakBrowser → CloakBrowser+proxy; each tier falls back automatically on failure or thin content
 - **Anti-bot bypass** — CloakBrowser (patched Chromium) passes Cloudflare Turnstile, reCAPTCHA v3, and 30+ bot detection tests
-- **Firecrawl-compatible API** — drop-in replacement for `POST /v2/scrape` with identical response format
-- **Pluggable cleaning pipeline** — HTML/Markdown stages, add custom steps without touching core logic
-- **LLM post-cleaning** — OpenAI-compatible API for semantic noise removal (optional)
+- **Firecrawl-compatible API** — drop-in replacement for `POST /v2/scrape` and `POST /v2/search` with identical response format
+- **Cleaning pipeline** — HTML/Markdown stages with qRead paragraph-density main-content extraction (tuned for Chinese pages), plus optional LLM post-cleaning via any OpenAI-compatible API
+- **Web search** — Zhipu (default) or Bocha behind a Firecrawl-compatible endpoint, filtered by uBlacklist blocklists and a dynamic domain-reputation system
 - **Metadata extraction** — OpenGraph, title, description, language, status code, etc.
 - **Smart caching** — URL + HTML hash + context-aware; avoids redundant LLM calls
+- **Command-line tools** — database schema sync, API token management
 - **Docker Compose** — one-command startup for all services
 
 ## Quick Start
@@ -50,24 +52,34 @@ docker compose up -d
 
 ### 3. Get your API token
 
-On first launch, the API prints a token to the console logs. Check with:
+Tokens are created with the bundled command-line tools (they also sync the database schema, so they are safe to run against a fresh database):
 
 ```bash
-docker compose logs deepcrawl-api | head -20
-# OR if running locally:
-dotnet run --project src/DeepCrawl.Api
+# one-shot: schema sync + initial token (idempotent)
+dotnet run --project src/DeepCrawl.CommandLineTools -- setup
+
+# or inside the compose network
+docker compose --profile cli run --rm deepcrawl-cli setup
 ```
 
-Look for the banner:
+Output:
 
 ```
-╔══════════════════════════════════════════════════════════╗
-║         DEEPCRAWL API TOKEN                              ║
-║           sk-xxxxxxxx...                                  ║
-╚══════════════════════════════════════════════════════════╝
+[synced] Database schema (crawl_records, crawl_statistics, api_tokens, domain_reputations)
+──────────────────────────────────────────────
+  Token   : default (id=1)
+  API Key (save this — shown once):
+  sk-xxxxxxxx...
+──────────────────────────────────────────────
 ```
 
-> The token is printed **once**. Save it. It will not be shown again.
+> The token is printed **once**. Save it. To add or manage tokens later:
+
+```bash
+dotnet run --project src/DeepCrawl.CommandLineTools -- token create --name laptop
+dotnet run --project src/DeepCrawl.CommandLineTools -- token list
+dotnet run --project src/DeepCrawl.CommandLineTools -- token revoke --id 2
+```
 
 ### 4. Start full stack (optional)
 
@@ -151,14 +163,21 @@ Firecrawl-compatible endpoint.
 
 ```
 Request → Token Auth
-  → CloakBrowser (Python, anti-bot)
+  → TieredHttpFetcher (fall through on failure / thin content)
+      Tier 0  Zhipu web reader (markdown, if ZHIPU_APIKEY set)
+      Tier 1  HttpClient direct
+      Tier 2  HttpClient + proxy
+      Tier 3  CloakBrowser (Python, anti-bot)
+      Tier 4  CloakBrowser + proxy
     → CleanPipeline
       [Html/0]  Metadata extraction
       [Html/10] AngleSharp tag removal
+      [Html/15] qRead main-content extraction
       [Html/20] Strip base64 data URIs
       [Md/10]   ReverseMarkdown
+      [Md/15]   Whitespace normalization
       [Md/20]   LLM cleaning (optional)
-    → PostgreSQL cache
+    → PostgreSQL + Redis cache
   → Firecrawl-compatible JSON
 ```
 
@@ -166,12 +185,13 @@ Built with .NET 10, following DDD layered architecture:
 
 ```
 src/
-├── DeepCrawl.Api/             ← Web API host
-├── DeepCrawl.Core/            ← Application layer
-├── DeepCrawl.Domain/          ← Domain entities & interfaces
-└── DeepCrawl.Infrastructure/  ← External dependencies
+├── DeepCrawl.Api/              ← Web API host
+├── DeepCrawl.Core/             ← Application layer
+├── DeepCrawl.Domain/           ← Domain entities & interfaces
+├── DeepCrawl.Infrastructure/   ← External dependencies
+└── DeepCrawl.CommandLineTools/ ← DB init & token management CLI
 
-cloak-service/                 ← Python anti-bot service
+cloak-service/                  ← Python anti-bot service
 ```
 
 ## Configuration
@@ -183,6 +203,8 @@ cloak-service/                 ← Python anti-bot service
 | `AI_APIKEY` | Yes | — | API key |
 | `AI_MODEL` | Yes | — | Model name (e.g. `Qwen/Qwen3-8B`) |
 | `AI__ThinkingLevel` | No | — | Deep reasoning: `"low"`, `"medium"`, `"high"`, `"none"` |
+| `ZHIPU_APIKEY` | No | — | Zhipu key; enables the reader fetch tier and Zhipu search |
+| `SEARCH_PROVIDER` | No | `Zhipu` | Search engine: `Zhipu` or `Bocha` |
 
 ## License
 

@@ -18,7 +18,12 @@ public class CleanPipeline
 
     public async Task<CleanResult> ExecuteAsync(string input, CleanContext context, CancellationToken ct = default)
     {
-        var htmlSteps = _steps.Where(s => s.Stage == CleanStage.Html).ToList();
+        // Markdown input (e.g. Zhipu reader tier) skips the HTML stage entirely —
+        // AngleSharp re-serialization would corrupt markdown
+        var isMarkdownInput = context.ContentType == "text/markdown";
+        var htmlSteps = isMarkdownInput
+            ? new List<ICleanStep>()
+            : _steps.Where(s => s.Stage == CleanStage.Html).ToList();
         var markdownSteps = _steps.Where(s => s.Stage == CleanStage.Markdown).ToList();
 
         var aiCleaned = false;
