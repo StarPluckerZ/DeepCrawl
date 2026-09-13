@@ -10,13 +10,13 @@ DeepCrawl fetches any web page through anti-bot countermeasures (CloakBrowser), 
 
 ## Features
 
-- **Tiered fetching** — five-level cascade, cheapest first: Zhipu web reader (markdown) → HttpClient → HttpClient+proxy → CloakBrowser → CloakBrowser+proxy; each tier falls back automatically on failure or thin content
+- **Tiered fetching** — four-level cascade, cheapest first: HttpClient → HttpClient+proxy → CloakBrowser → CloakBrowser+proxy; each tier falls back automatically on failure or thin content
 - **Anti-bot bypass** — CloakBrowser (patched Chromium) passes Cloudflare Turnstile, reCAPTCHA v3, and 30+ bot detection tests
-- **Firecrawl-compatible API** — drop-in replacement for `POST /v2/scrape` and `POST /v2/search` with identical response format
+- **Firecrawl-compatible API** — drop-in replacement for `POST /v2/scrape` with identical response format
 - **Cleaning pipeline** — HTML/Markdown stages with qRead paragraph-density main-content extraction (tuned for Chinese pages), plus optional LLM post-cleaning via any OpenAI-compatible API
-- **Web search** — Zhipu (default) or Bocha behind a Firecrawl-compatible endpoint, filtered by uBlacklist blocklists and a dynamic domain-reputation system
 - **Metadata extraction** — OpenGraph, title, description, language, status code, etc.
 - **Smart caching** — URL + HTML hash + context-aware; avoids redundant LLM calls
+- **Adaptive blocking** — crawl-failure tracking per domain with two-stage self-healing bans
 - **Command-line tools** — database schema sync, API token management
 - **Docker Compose** — one-command startup for all services
 
@@ -164,7 +164,6 @@ Firecrawl-compatible endpoint.
 ```
 Request → Token Auth
   → TieredHttpFetcher (fall through on failure / thin content)
-      Tier 0  Zhipu web reader (markdown, if ZHIPU_APIKEY set)
       Tier 1  HttpClient direct
       Tier 2  HttpClient + proxy
       Tier 3  CloakBrowser (Python, anti-bot)
@@ -203,8 +202,6 @@ cloak-service/                  ← Python anti-bot service
 | `AI_APIKEY` | Yes | — | API key |
 | `AI_MODEL` | Yes | — | Model name (e.g. `Qwen/Qwen3-8B`) |
 | `AI__ThinkingLevel` | No | — | Deep reasoning: `"low"`, `"medium"`, `"high"`, `"none"` |
-| `ZHIPU_APIKEY` | No | — | Zhipu key; enables the reader fetch tier and Zhipu search |
-| `SEARCH_PROVIDER` | No | `Zhipu` | Search engine: `Zhipu` or `Bocha` |
 
 ## License
 

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace DeepCrawl.Infrastructure.Filtering;
 
-public class DomainReputationService : IUrlFilter, IDomainReporter
+public class DomainReputationService : IDomainReporter
 {
     private readonly IBaseRepository<DomainReputation> _repo;
     private readonly IRedisClient _redis;
@@ -25,35 +25,6 @@ public class DomainReputationService : IUrlFilter, IDomainReporter
         _redis = redis;
         _options = options;
         _logger = logger;
-    }
-
-    public Task LoadRulesAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-    public async Task<bool> IsBlockedAsync(string url, CancellationToken ct = default)
-    {
-        if (!_options.Enabled) return false;
-
-        var domain = ExtractDomain(url);
-        if (domain is null) return false;
-
-        var cacheKey = BlockedKey(domain);
-        if (await _redis.ExistsAsync(cacheKey, ct))
-            return true;
-
-        var record = await _repo
-            .Where(r => r.Domain == domain && r.BlockedUntil > DateTime.UtcNow)
-            .FirstAsync(ct);
-
-        if (record is null) return false;
-
-        var remaining = record.BlockedUntil!.Value - DateTime.UtcNow;
-        if (remaining > TimeSpan.Zero)
-        {
-            await _redis.SetAsync(BlockedKey(domain, remaining), record.BlockedUntil.Value.ToString("O"), ct);
-            return true;
-        }
-
-        return false;
     }
 
     public async Task RecordFailureAsync(string url, CancellationToken ct = default)

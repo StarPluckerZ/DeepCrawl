@@ -17,10 +17,6 @@ public class ReverseMarkdownStep : ICleanStep
 
     public Task<CleanResult> CleanAsync(string input, CleanContext context, CancellationToken ct = default)
     {
-        // Input is already markdown (Zhipu reader tier) — skip the HTML → markdown conversion
-        if (context.ContentType == "text/markdown")
-            return Task.FromResult(new CleanResult { Output = input, AiCleaned = false });
-
         return Task.FromResult(new CleanResult { Output = _converter.Convert(input), AiCleaned = false });
     }
 }

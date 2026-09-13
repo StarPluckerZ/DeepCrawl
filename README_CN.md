@@ -10,13 +10,13 @@ DeepCrawl 通过反爬引擎（CloakBrowser）获取任意网页，经规则清�
 
 ## 功能特性
 
-- **分级抓取** — 五层级联、成本从低到高：智谱 Web Reader（markdown）→ HttpClient → HttpClient+代理 → CloakBrowser → CloakBrowser+代理，失败或内容过薄时自动降级
+- **分级抓取** — 四层级联、成本从低到高：HttpClient → HttpClient+代理 → CloakBrowser → CloakBrowser+代理，失败或内容过薄时自动降级
 - **反爬穿透** — CloakBrowser（底层 Chromium 源码级补丁）通过 Cloudflare Turnstile、reCAPTCHA v3 等 30+ 项检测
-- **Firecrawl 兼容 API** — `POST /v2/scrape`、`POST /v2/search` 端点，响应格式与 Firecrawl 一致，可直接替换
+- **Firecrawl 兼容 API** — `POST /v2/scrape` 端点，响应格式与 Firecrawl 一致，可直接替换
 - **清洗管线** — HTML/Markdown 两阶段，内置 qRead 段落密度正文抽取（针对中文页面调优），可选接入大模型精修（任意 OpenAI 兼容 API）
-- **网页搜索** — 智谱（默认）或博查，Firecrawl 兼容端点，叠加 uBlacklist 内容农场黑名单与动态域名信誉过滤
 - **元数据提取** — OpenGraph、标题、描述、语言、状态码等
 - **智能缓存** — URL + HTML 哈希 + 上下文感知，避免重复 LLM 调用
+- **自适应封禁** — 按域名追踪爬取失败，两阶段自适应封禁自愈
 - **命令行工具** — 数据库 Schema 同步、API Token 管理
 - **Docker Compose 一键启动** — 全栈编排
 
@@ -164,7 +164,6 @@ Firecrawl 兼容端点。
 ```
 请求 → Token 鉴权
   → TieredHttpFetcher 分级抓取（失败/内容过薄时逐级降级）
-      Tier 0  智谱 Web Reader（markdown，配置 ZHIPU_APIKEY 后启用）
       Tier 1  HttpClient 直连
       Tier 2  HttpClient + 代理
       Tier 3  CloakBrowser（Python 反爬引擎）
@@ -203,8 +202,6 @@ cloak-service/                  ← Python 反爬服务
 | `AI_APIKEY` | 是 | — | API 密钥 |
 | `AI_MODEL` | 是 | — | 模型名称（如 `Qwen/Qwen3-8B`） |
 | `AI__ThinkingLevel` | 否 | — | 深度思考级别：`"low"`、`"medium"`、`"high"`、`"none"` |
-| `ZHIPU_APIKEY` | 否 | — | 智谱密钥；启用 Reader 抓取层与智谱搜索 |
-| `SEARCH_PROVIDER` | 否 | `Zhipu` | 搜索引擎：`Zhipu` 或 `Bocha` |
 
 ## License
 

@@ -13,13 +13,11 @@ namespace DeepCrawl.Infrastructure;
 public static partial class ServiceCollectionExtensions
 {
     /// <summary>
-    /// The tiered fetch stack: Zhipu web reader (markdown), direct HttpClient,
-    /// proxied HttpClient, CloakBrowser — each with its own named client and
-    /// concurrency gate.
+    /// The tiered fetch stack: direct HttpClient, proxied HttpClient,
+    /// CloakBrowser — each with its own named client and concurrency gate.
     /// </summary>
     private static IServiceCollection AddFetchers(
-        this IServiceCollection services, IConfiguration configuration,
-        CrawlConfig crawlConfig, ZhipuOptions zhipuOptions)
+        this IServiceCollection services, IConfiguration configuration, CrawlConfig crawlConfig)
     {
         // CloakBrowser
         services.Configure<CloakBrowserClientOptions>(configuration.GetSection("CloakBrowser"));
@@ -64,15 +62,6 @@ public static partial class ServiceCollectionExtensions
 
         services.AddSingleton<IDirectHttpFetcher, DirectHttpFetcher>();
         services.AddSingleton<TieredHttpFetcher>();
-
-        // Zhipu web reader (named client, DirectHttpFetcher pattern)
-        services.AddHttpClient("Zhipu", c =>
-        {
-            c.BaseAddress = new Uri(zhipuOptions.BaseUrl);
-            c.DefaultRequestHeaders.Add("Authorization", $"Bearer {zhipuOptions.ApiKey}");
-            c.Timeout = TimeSpan.FromSeconds(zhipuOptions.TimeoutSeconds);
-        });
-        services.AddSingleton<IZhipuReaderFetcher, ZhipuReaderFetcher>();
 
         return services;
     }

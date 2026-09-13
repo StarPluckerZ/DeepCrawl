@@ -124,9 +124,7 @@ public class CrawlPipeline(
         }
 
         int? statusCode = 200;
-        // Zhipu reader tier returns markdown instead of HTML
-        var isMarkdownTier = tier == FetchTier.ZhipuReader;
-        string contentType = isMarkdownTier ? "text/markdown" : "text/html";
+        string contentType = "text/html";
 
         if (content is null)
         {
@@ -175,20 +173,8 @@ public class CrawlPipeline(
         context.StatusCode = statusCode;
         context.ContentType = contentType;
 
-        // MetadataExtractorStep (HTML stage) is skipped for markdown input — pre-seed so
-        // the robots.txt fetch below still runs
-        if (isMarkdownTier)
-            context.Metadata ??= new CrawlMetadata
-            {
-                SourceURL = request.Url,
-                StatusCode = statusCode,
-                ContentType = contentType
-            };
-
         var cleanResult = await cleanPipeline.ExecuteAsync(content, context, ct);
-
-        // Do not let markdown masquerade as HTML in records or responses
-        var cleanedHtml = isMarkdownTier ? null : cleanResult.CleanedHtml;
+        var cleanedHtml = cleanResult.CleanedHtml;
 
         var existing = await crawlRecordRepo
             .Where(c => c.Url == request.Url)

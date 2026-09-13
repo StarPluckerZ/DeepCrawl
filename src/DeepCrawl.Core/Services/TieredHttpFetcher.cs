@@ -8,7 +8,6 @@ namespace DeepCrawl.Core.Services;
 public class TieredHttpFetcher(
     IDirectHttpFetcher directFetcher,
     ICloakBrowserClient cloakClient,
-    IZhipuReaderFetcher zhipuReader,
     IContentAnalyzer contentAnalyzer,
     CrawlConfig crawlConfig,
     ILogger<TieredHttpFetcher> logger)
@@ -16,7 +15,6 @@ public class TieredHttpFetcher(
     private const int DEFAULT_TIMEOUT_SECONDS = 30;
     private readonly SemaphoreSlim _httpSem = new(crawlConfig.HttpConcurrent);
     private readonly SemaphoreSlim _cloakSem = new(crawlConfig.CloakConcurrent);
-    private readonly SemaphoreSlim _readerSem = new(crawlConfig.ReaderConcurrent);
 
     public async Task<(bool Success, FetchTier Tier, string? Html, string? Error)> FetchAsync(
         string url, string? waitUntil, CancellationToken ct)
@@ -30,35 +28,7 @@ public class TieredHttpFetcher(
         var tier = FetchTier.HttpClient;
         string? lastError = null;
 
-        // Tier 0: Zhipu reader (highest priority, returns markdown; skipped when not configured)
-        if (crawlConfig.ZhipuReaderConfigured)
-        {
-            tier = FetchTier.ZhipuReader;
-            await _readerSem.WaitAsync(ct);
-            try
-            {
-                content = await zhipuReader.ReadAsync(url, ct);
-                if (IsReaderContentValid(content))
-                    success = true;
-                else
-                    logger.LogWarning("Tier 0 (Zhipu reader) returned no content for {Url}, falling back", url);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                logger.LogWarning("Tier 0 (Zhipu reader) timed out for {Url}, falling back", url);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning("Tier 0 (Zhipu reader) failed for {Url}: {Msg}, falling back", url, ex.Message);
-            }
-            finally
-            {
-                _readerSem.Release();
-            }
-        }
-
         // Tier 1: HttpClient direct
-        tier = FetchTier.HttpClient;
         await _httpSem.WaitAsync(ct);
         try
         {
@@ -180,9 +150,4 @@ public class TieredHttpFetcher(
 
         return success ? (true, tier, content, null) : (false, tier, null, lastError);
     }
-
-    // Zhipu reader returns already-extracted main content — the HTML-based heuristic
-    // (ContentAnalyzer) does not apply, so use a plain length check instead
-    private bool IsReaderContentValid(string? content)
-        => !string.IsNullOrWhiteSpace(content) && content.Trim().Length >= crawlConfig.MinTextLength;
 }
